@@ -1,0 +1,19 @@
+[project]
+name = "rocket-lander"
+version = "0.1.0"
+description = "Train and watch a reinforcement learning lunar lander"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "gymnasium[box2d]>=1.2,<2",
+    "stable-baselines3>=2.7,<3",
+]
+
+[project.scripts]
+rocket = "rocket:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["rocket"]
