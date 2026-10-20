@@ -1,5 +1,5 @@
 import * as T from '../vendor/three/three.module.js';
-import {samplePose} from './flight-data.mjs';
+import {samplePose,wreckagePose,terrainHeight as groundHeight,CRASH_SECONDS,crashAgeFor} from './flight-data.mjs';
 
 const random=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
 const preview={steps:0,fps:50,seed:0,world:{width:20,height:13.333,pad:[8,12,3.333],terrain:
@@ -13,14 +13,6 @@ function mesh(geometry,mat,parent,x=0,y=0,z=0){const m=new T.Mesh(geometry,mat);
 function shapeGeometry(points,depth){
   const shape=new T.Shape();points.forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));shape.closePath();
   const g=new T.ExtrudeGeometry(shape,{depth,bevelEnabled:false});g.translate(0,0,-depth/2);return g;
-}
-function groundHeight(world,x){
-  const points=world.terrain;
-  if(x<=points[0][0])return points[0][1];
-  for(let i=1;i<points.length;i++)if(x<=points[i][0]){
-    const a=points[i-1],b=points[i],t=(x-a[0])/(b[0]-a[0]);return a[1]+t*(b[1]-a[1]);
-  }
-  return points.at(-1)[1];
 }
 function surfaceTexture(){
   const bytes=new Uint8Array(128*128*4);
@@ -76,6 +68,38 @@ function trailFor(flight,color,dashed=false){
   const mat=dashed?new T.LineDashedMaterial({color,dashSize:.2,gapSize:.18,transparent:true,opacity:.65}):new T.LineBasicMaterial({color,transparent:true,opacity:.6});
   const line=new T.Line(geometry,mat);if(dashed)line.computeLineDistances();return line;
 }
+function makeWreck(flight,ghost=false){
+  if(flight.outcome!=='crashed')return null;
+  const root=new T.Group();root.name=ghost?'reference-wreckage':'crash-wreckage';root.visible=false;
+  const parts=wreckagePose(flight,0).map((piece,i)=>mesh(shapeGeometry(piece.points,piece.kind==='leg'?.15:.46),
+    material(ghost?0x60d6e9:piece.kind==='leg'?0x687078:[0xb5b3a9,0x34393c,0xb35b35][i%3],
+      {roughness:.95,metalness:.3,wireframe:ghost,transparent:ghost,opacity:ghost?.45:1}),root));
+  const impact=flight.frames.at(-1).position;
+  const scorch=mesh(new T.CircleGeometry(1.35,28),new T.MeshBasicMaterial({color:0x17191a,transparent:true,opacity:.55,depthWrite:false}),root,
+    impact[0],groundHeight(flight.world,impact[0])+.025,0);scorch.rotation.x=-Math.PI/2;scorch.visible=!ghost;
+  const clouds=[{count:32,color:0xffbc71,size:.05,life:.65},{count:64,color:0xafa38e,size:.16,life:CRASH_SECONDS}].map(spec=>{
+    const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(spec.count*3),3));
+    const points=new T.Points(geometry,new T.PointsMaterial({color:spec.color,size:spec.size,transparent:true,depthWrite:false}));root.add(points);
+    return {...spec,points};
+  });
+  const flash=new T.PointLight(0xffaf60,0,5);flash.position.set(impact[0],impact[1]+.3,.5);root.add(flash);
+  function update(age,reducedMotion){
+    const time=reducedMotion?CRASH_SECONDS:Math.max(0,Math.min(CRASH_SECONDS,age));
+    wreckagePose(flight,time).forEach((piece,i)=>{parts[i].position.set(...piece.position);parts[i].rotation.set(...piece.rotation);});
+    for(const cloud of clouds){
+      cloud.points.visible=!ghost&&!reducedMotion&&time<cloud.life;
+      cloud.points.material.opacity=Math.max(0,1-time/cloud.life)*.65;
+      const positions=cloud.points.geometry.attributes.position;
+      for(let i=0;i<cloud.count;i++){
+        const angle=random(i+4100)*Math.PI*2,speed=.6+random(i+4200)*3;
+        const x=impact[0]+Math.cos(angle)*speed*time;
+        positions.setXYZ(i,x,Math.max(groundHeight(flight.world,x)+.06,impact[1]+random(i+4300)*2*time-2*time*time),Math.sin(angle)*speed*time);
+      }positions.needsUpdate=true;
+    }
+    flash.intensity=ghost||reducedMotion?0:Math.max(0,1-time/.22)*10;
+  }
+  return {root,update};
+}
 export function buildFlightScene(input,reference=null){
   const flight=input||preview,world=flight.world;
   const scene=new T.Scene();scene.background=new T.Color(0x060a10);scene.fog=new T.FogExp2(0x0a1119,.009);
@@ -111,18 +135,23 @@ export function buildFlightScene(input,reference=null){
   const starGeo=new T.BufferGeometry();starGeo.setAttribute('position',new T.BufferAttribute(starPositions,3));
   scene.add(new T.Points(starGeo,new T.PointsMaterial({color:0xc4d3e1,size:.09,transparent:true,opacity:.6})));
   const planet=mesh(new T.SphereGeometry(4.5,32,24),material(0x567789,{emissive:0x101a26,roughness:1}),scene,-20,29,-85);
-  const craft=makeCraft(flight.frames[0]);scene.add(craft.root);
+  const craft=makeCraft(flight.frames[0]);craft.root.name='flight-craft';scene.add(craft.root);
+  const wreck=makeWreck(flight);if(wreck)scene.add(wreck.root);
   const trail=trailFor(flight,0xff8659);scene.add(trail);
   const ghost=reference?makeCraft(reference.frames[0],0x60d6e9,true):null;
   const refTrail=reference?trailFor(reference,0x60d6e9,true):null;
   if(ghost){scene.add(ghost.root);scene.add(refTrail);}
+  const refWreck=reference?makeWreck(reference,true):null;if(refWreck)scene.add(refWreck.root);
   const dustArray=new Float32Array(160*3),dustGeo=new T.BufferGeometry();dustGeo.setAttribute('position',new T.BufferAttribute(dustArray,3));
   const dust=new T.Points(dustGeo,new T.PointsMaterial({color:0xd3c4a7,size:.06,transparent:true,opacity:.38,depthWrite:false}));scene.add(dust);
   const camera=new T.PerspectiveCamera(46,1,.05,250);let cameraReady=false;
   function update(step,options={}){
     const pose=samplePose(flight,step);craft.update(pose);
+    const ageFor=f=>crashAgeFor(f,step,options);
+    if(wreck){wreck.root.visible=pose.complete;craft.root.visible=!pose.complete;if(pose.complete)wreck.update(ageFor(flight),options.reducedMotion);}
     trail.geometry.setDrawRange(0,Math.min(flight.frames.length,Math.floor(step)+1));
     if(ghost){ghost.root.visible=refTrail.visible=!options.split;ghost.update(samplePose(reference,step));refTrail.geometry.setDrawRange(0,Math.min(reference.frames.length,Math.floor(step)+1));}
+    if(refWreck){const complete=step>=reference.steps;refWreck.root.visible=complete&&!options.split;ghost.root.visible=!complete&&!options.split;if(complete)refWreck.update(ageFor(reference),options.reducedMotion);}
     const altitude=pose.position[1]-world.pad[2];
     dust.visible=!options.reducedMotion&&!pose.complete&&pose.frame.action===2&&altitude<4;
     if(dust.visible){

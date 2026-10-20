@@ -56,3 +56,55 @@ export function debriefFor(flight, reference=null) {
   }
   return notes;
 }
+
+// Cosmetic aftermath only: never append simulation frames or change the cursor.
+export const CRASH_SECONDS=1.8;
+export function crashAgeFor(flight,step,{endStep=flight.steps,crashAge=CRASH_SECONDS,reducedMotion=false}={}){
+  if(reducedMotion)return CRASH_SECONDS;
+  const tail=step>=endStep?crashAge:0;
+  return Math.max(0,Math.min(CRASH_SECONDS,(step-flight.steps)/flight.fps+tail));
+}
+export class CrashPlaybackClock {
+  constructor(){this.key='';this.step=0;this.age=CRASH_SECONDS;this.active=false;}
+  tick(state,elapsed,wasPlaying,reducedMotion=false){
+    const key=state.flights.map(f=>f.revision_id).join(':'),end=Math.max(0,...state.flights.map(f=>f.steps));
+    const changed=key!==this.key,atEnd=state.flights.length>0&&state.step>=end;
+    const arrived=!changed&&atEnd&&this.step<end&&wasPlaying;
+    let redraw=false;
+    if(changed||!atEnd){this.age=CRASH_SECONDS;this.active=false;}
+    if(arrived&&state.flights.some(f=>f.outcome==='crashed'&&(end-f.steps)/f.fps<CRASH_SECONDS)&&!reducedMotion){this.age=0;this.active=true;redraw=true;}
+    else if(reducedMotion){redraw=this.active;this.age=CRASH_SECONDS;this.active=false;}
+    else if(this.active&&!state.inspection){this.age=Math.min(CRASH_SECONDS,this.age+Math.max(0,elapsed));redraw=true;this.active=this.age<CRASH_SECONDS;}
+    this.key=key;this.step=state.step;
+    return {age:this.age,redraw};
+  }
+}
+
+const fragmentRandom=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);};
+export function terrainHeight(world,x){
+  const points=world.terrain;
+  if(x<=points[0][0])return points[0][1];
+  for(let i=1;i<points.length;i++)if(x<=points[i][0]){
+    const a=points[i-1],b=points[i];return a[1]+(x-a[0])/(b[0]-a[0])*(b[1]-a[1]);
+  }
+  return points.at(-1)[1];
+}
+export function wreckagePose(flight,seconds,reducedMotion=false){
+  if(flight.outcome!=='crashed')return null;
+  const frame=flight.frames.at(-1),hull=frame.bodies[0];
+  const center=points=>points.reduce((sum,p)=>[sum[0]+p[0]/points.length,sum[1]+p[1]/points.length],[0,0]);
+  const hub=center(hull);
+  const pieces=hull.map((p,i)=>({kind:'hull',points:[hub,p,hull[(i+1)%hull.length]]}));
+  pieces.push(...frame.bodies.slice(1).map(points=>({kind:'leg',points})));
+  const age=reducedMotion?CRASH_SECONDS:Math.max(0,Math.min(CRASH_SECONDS,seconds));
+  return pieces.map(({kind,points},i)=>{
+    const origin=center(points),seed=i+(flight.seed||0)*17;
+    const spread=(fragmentRandom(seed+30)-.5)*5,travel=1-Math.exp(-age*2.5);
+    const x=origin[0]+spread*travel;
+    const y=Math.max(terrainHeight(flight.world,x)+.10,
+      origin[1]+(.8+fragmentRandom(seed+60)*2.4)*age-4.8*age*age);
+    return {kind,points:points.map(p=>[p[0]-origin[0],p[1]-origin[1]]),
+      position:[x,y,(fragmentRandom(seed+90)-.5)*2*travel],
+      rotation:[age*(fragmentRandom(seed+120)-.5)*3,age*(fragmentRandom(seed+150)-.5)*3,age*(fragmentRandom(seed+180)-.5)*5]};
+  });
+}

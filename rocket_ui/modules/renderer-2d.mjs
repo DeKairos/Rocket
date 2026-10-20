@@ -1,9 +1,10 @@
 // Retained Canvas renderer of the recorded Box2D fixtures.
+import {wreckagePose,terrainHeight,crashAgeFor} from './flight-data.mjs';
 export function create2DRenderer(canvas) {
 const outcomes={landed:'Pad landing confirmed.',off_pad:'Landing pad missed.',unsafe_landing:'Touchdown not confirmed.',crashed:'Hull impact.',timeout:'Time limit reached.',out_of_bounds:'Craft left the flight area.'};
 const ctx=canvas.getContext('2d');
 let width=0,height=0;
-const state={flights:[],step:0};
+const state={flights:[],step:0,options:{}};
 function resize() {
   const bounds = canvas.parentElement.getBoundingClientRect();
   width = bounds.width; height = bounds.height;
@@ -169,6 +170,7 @@ function drawScene(flight, w, h, step, index) {
     }
   }
   ctx.restore();
+  if(!crashed){
   // Render the true Box2D fixture polygons, interpolated only between recorded frames.
   for (let i = 2; i >= 0; i--) {
     const points = frame.bodies[i].map((p, j) => project(p.map((v, k) => lerp(v, next.bodies[i][j][k]))));
@@ -188,15 +190,28 @@ function drawScene(flight, w, h, step, index) {
   ctx.beginPath(); ctx.ellipse(0, -scale * .22, scale * .16, scale * .14, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#c4e1db66'; ctx.fillRect(-scale * .07, -scale * .3, scale * .08, scale * .035);
   ctx.restore();
+  }else{
+    const age=crashAgeFor(flight,step,state.options);
+    const [sx,sy]=project([position[0],terrainHeight(world,position[0])]);
+    ctx.fillStyle='#17191a99';ctx.beginPath();ctx.ellipse(sx,sy,scale*1.4,scale*.13,0,0,Math.PI*2);ctx.fill();
+    wreckagePose(flight,age).forEach((piece,i)=>{
+      const [x,y]=project(piece.position);
+      ctx.save();ctx.translate(x,y);ctx.rotate(-piece.rotation[2]);
+      path(piece.points.map(([px,py])=>[px*scale,-py*scale]),true);
+      ctx.fillStyle=piece.kind==='leg'?'#687078':['#b5b3a9','#34393c','#b35b35'][i%3];ctx.strokeStyle='#5e5147';ctx.lineWidth=.7;ctx.fill();ctx.stroke();ctx.restore();
+    });
+    if(!state.options.reducedMotion&&age<.65){
+      ctx.fillStyle=`rgba(255,188,113,${1-age/.65})`;
+      for(let i=0;i<28;i++){
+        const angle=randomAt(i+4100)*Math.PI*2,r=(.6+randomAt(i+4200)*3)*age*scale;
+        ctx.fillRect(rx+Math.cos(angle)*r,ry-Math.abs(Math.sin(angle))*r+age*age*scale,2,2);
+      }
+    }
+  }
   // Contact light and terminal impact field.
   if (complete && flight.outcome === 'landed') {
     ctx.strokeStyle = '#bacba066'; ctx.lineWidth = .7;
     ctx.beginPath(); ctx.ellipse(rx, padY, scale * 1.5, scale * .2, 0, 0, Math.PI * 2); ctx.stroke();
-  }
-  if (crashed) {
-    const glow = ctx.createRadialGradient(rx, ry, 0, rx, ry, scale * 1.8);
-    glow.addColorStop(0, '#ed945536'); glow.addColorStop(1, '#ed945500');
-    ctx.fillStyle = glow; ctx.fillRect(rx - scale * 2, ry - scale * 2, scale * 4, scale * 4);
   }
   if (complete && state.flights.length === 2) {
     ctx.font = '8px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
@@ -222,5 +237,5 @@ function draw() {
 }
 
 
-return {setFlights(flights){state.flights=flights;},render(step){state.step=step;draw();},resize,dispose(){}};
+return {setFlights(flights){state.flights=flights;},render(step,options={}){state.step=step;state.options=options;draw();},resize,dispose(){}};
 }

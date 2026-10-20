@@ -78,3 +78,67 @@ test('2D fallback renders completed comparisons and their outcome labels',async(
     assert.ok(labels.includes('Landing pad missed.'));assert.ok(labels.includes('Touchdown not confirmed.'));
   }finally{globalThis.window=previous;}
 });
+
+test('crash wreckage is deterministic, settles on terrain and never changes recorded frames',()=>{
+  assert.equal(typeof data.wreckagePose,'function');
+  const f={...fixture,outcome:'crashed',seed:107,world:{pad:[8,12,3],terrain:[[0,3],[20,3]]},frames:fixture.frames.map(frame=>({...frame,bodies:[[[3.5,4],[4.5,4],[4.5,5],[3.5,5]],[[3,3],[3.1,3],[3.1,3.6]],[[5,3],[5.1,3],[5.1,3.6]]]}))};
+  const before=JSON.stringify(f);
+  const impact=data.wreckagePose(f,0),burst=data.wreckagePose(f,.4),settled=data.wreckagePose(f,1.8);
+  assert.ok(impact.length>=6);assert.notDeepEqual(impact,burst);
+  assert.deepEqual(burst,data.wreckagePose(f,.4));
+  assert.deepEqual(settled,data.wreckagePose(f,100));
+  assert.deepEqual(settled,data.wreckagePose(f,0,true));
+  assert.ok(settled.every(p=>p.position[1]>=3&&p.position[1]<3.3));
+  for(const outcome of ['landed','off_pad','unsafe_landing','timeout','out_of_bounds'])assert.equal(data.wreckagePose({...f,outcome},1),null);
+  assert.equal(JSON.stringify(f),before);
+});
+
+test('cosmetic crash clock runs after the last frame, freezes for inspection and resets on rewind',()=>{
+  assert.equal(typeof data.CrashPlaybackClock,'function');
+  const clock=new data.CrashPlaybackClock();
+  const f={...fixture,outcome:'crashed',revision_id:'crash'};
+  const state={flights:[f],step:1,inspection:false};
+  clock.tick(state,.02,true);
+  state.step=2;
+  assert.equal(clock.tick(state,.02,true).age,0);
+  assert.ok(clock.tick(state,.2,false).age>0);
+  state.inspection=true;const held=clock.tick(state,.2,false).age;
+  assert.equal(clock.tick(state,.2,false).age,held);
+  state.inspection=false;assert.ok(clock.tick(state,.2,false).age>held);
+  state.step=0;clock.tick(state,.1,false);state.step=2;
+  assert.equal(clock.tick(state,.1,false).age,1.8); // A seek shows the settled wreck.
+  state.step=0;clock.tick(state,.1,true);state.step=2;
+  assert.equal(clock.tick(state,.1,true,true).age,1.8);
+  assert.equal(state.step,2);
+});
+
+test('3D crashes replace the intact craft, hold wreckage and restore on rewind',async()=>{
+  const {buildFlightScene}=await import('../rocket_ui/modules/renderer-3d.mjs');
+  const f={...fixture,outcome:'crashed',seed:107,world:{width:20,height:13.333,pad:[8,12,3],terrain:[[0,3],[20,3]]},frames:fixture.frames.map(frame=>({...frame,bodies:[[[3.5,4],[4.5,4],[4,5]],[[3,3],[3.1,3],[3,3.6]],[[5,3],[5.1,3],[5,3.6]]]}))};
+  const view=buildFlightScene(f);
+  const root=view.scene.getObjectByName('flight-craft'),wreck=view.scene.getObjectByName('crash-wreckage');
+  assert.ok(root&&wreck);
+  view.update(1);assert.equal(root.visible,true);assert.equal(wreck.visible,false);
+  view.update(2,{crashAge:.4});assert.equal(root.visible,false);assert.equal(wreck.visible,true);
+  const burst=wreck.children[0].position.toArray();
+  view.update(2,{crashAge:1.8});assert.notDeepEqual(wreck.children[0].position.toArray(),burst);
+  const settled=wreck.children[0].position.toArray();
+  view.update(2,{crashAge:0,reducedMotion:true});assert.deepEqual(wreck.children[0].position.toArray(),settled);
+  view.update(0);assert.equal(root.visible,true);assert.equal(wreck.visible,false);
+  view.dispose();
+});
+
+test('shorter crashed comparisons finish their cosmetic tail after the shared timeline ends',()=>{
+  assert.equal(typeof data.crashAgeFor,'function');
+  const f={...fixture,outcome:'crashed',steps:99,fps:50,revision_id:'short'};
+  const other={...fixture,outcome:'landed',steps:100,fps:50,revision_id:'long'};
+  const clock=new data.CrashPlaybackClock();
+  const state={flights:[f,other],step:99,inspection:false};clock.tick(state,.02,true);
+  state.step=100;const start=clock.tick(state,.02,true);
+  assert.equal(start.age,0);
+  assert.equal(data.crashAgeFor(f,100,{endStep:100,crashAge:start.age}),.02);
+  const later=clock.tick(state,.5,false);
+  assert.ok(data.crashAgeFor(f,100,{endStep:100,crashAge:later.age})>.5);
+  assert.equal(data.crashAgeFor(f,100,{endStep:100,crashAge:1.8}),1.8);
+  assert.equal(data.crashAgeFor(f,99,{endStep:100,crashAge:1.8}),0);
+});

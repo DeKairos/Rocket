@@ -1,5 +1,5 @@
 import {FlightController} from './modules/flight-state.mjs';
-import {frameAt} from './modules/flight-data.mjs';
+import {frameAt,CrashPlaybackClock} from './modules/flight-data.mjs';
 import {RendererHost} from './modules/renderer-host.mjs';
 import {AnalysisView} from './modules/analysis.mjs';
 
@@ -13,6 +13,7 @@ const options={camera:reducedMotion.matches?'surface':'chase',split:false};
 let status=null,dirty=true,flightSignature='',historySignature='',lastUi=0,lastTime=0,lastDraw=0;
 let focusReturn=null,announceSignature='',lastPerformanceUpdate=0;
 const frameIntervals=[],renderCosts=[];
+const crashClock=new CrashPlaybackClock();
 
 async function request(url){
   const response=await fetch(url);let data;
@@ -85,7 +86,7 @@ function refreshTelemetry(){
   $('velocity').textContent=`${frame.velocity[1]>=0?'+':''}${frame.velocity[1].toFixed(2)}`;
   $('action-name').textContent=frame.step===0?'Reset / no decision':frame.step===f.steps?'Episode complete':actions[frame.action];
   $('tilt-label').textContent=`${(frame.angle*180/Math.PI).toFixed(1)}° tilt`;
-  $('frame-counter').textContent=`FRAME ${String(Math.floor(s.step)).padStart(4,'0')}`;
+  $('frame-counter').textContent=`FRAME ${String(Math.floor(s.step)).padStart(4,'0')}${frame.step===f.steps&&f.outcome==='crashed'?' / COSMETIC WRECKAGE':''}`;
   $('playback-time').textContent=time(s.step/f.fps);$('total-time').textContent=time(s.maxSteps/f.fps);
   $('timeline').value=Math.floor(s.step);
   $('primary-label').textContent=`${s.comparison==='counterfactual'?'Disturbed':names[f.policy]}${s.step>=f.steps?' · COMPLETE':''}`;
@@ -177,8 +178,9 @@ function animate(now){
   if(document.hidden){requestAnimationFrame(animate);return;}
   const s=controller.state,wasPlaying=s.playing;
   controller.advance(elapsed);
-  if(wasPlaying||dirty){
-    const begin=performance.now();host.render(s.step,{...options,reducedMotion:reducedMotion.matches,inspect:s.inspection});
+  const crash=crashClock.tick(s,elapsed,wasPlaying,reducedMotion.matches);
+  if(wasPlaying||dirty||crash.redraw){
+    const begin=performance.now();host.render(s.step,{...options,endStep:s.maxSteps,crashAge:crash.age,reducedMotion:reducedMotion.matches,inspect:s.inspection});
     if(wasPlaying&&lastDraw&&now-lastDraw<250){frameIntervals.push(now-lastDraw);renderCosts.push(performance.now()-begin);if(frameIntervals.length>600){frameIntervals.shift();renderCosts.shift();}}
     lastDraw=wasPlaying?now:0;dirty=false;
   }

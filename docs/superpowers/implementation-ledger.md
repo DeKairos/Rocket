@@ -30,3 +30,12 @@
 - Regression proof: three new classifier cases failed before the fix; all five classification tests passed after. Node behavior suite passed 12/12, including both new terminal labels. Real trained seed116 now reports unsafe_landing with contacts [false,true], despite reward296.2; seed100 remains a confirmed pad landing.
 - Full Python run: 20 tests, two errors in the same HTTP parity test's random/trained subcases (Windows10054 during response read). Remaining methods passed. This remains a known baseline transport limitation; no fully green suite claim.
 - Restarted local demo at port8002 and verified the updated terminal label in the real browser.
+
+## Approved crash aftermath — 2026-10-20
+
+- User approved bounded design: confirmed crashes split hull/detach legs, scatter sparks/dust, leave wreckage, restore on rewind/replay, static aftermath for reduced motion.
+- Added deterministic fragments from the terminal recorded fixture polygons. Both 3D and 2D consume the same cosmetic fragment poses. Only outcome=crashed activates destruction; pad misses and unconfirmed touchdowns stay intact.
+- Separate 1.8-second visual clock continues rendering after the last simulation frame. Timeline and numerical telemetry remain fixed. Inspection freezes the effect; seeking to the end shows settled debris. Existing scene disposal releases fragment and particle resources.
+- Tests first failed for absent wreckage/clock, then passed. Actual 3D visibility/rewind regression passed. Independent review identified a shorter-comparison crash that could freeze mid-burst; reproduced RED with expected0 vs actual1.8, fixed shared terminal offset, verified GREEN.
+- Verification: Node16/16 passed; asset integrity/import closure1/1 passed; app syntax and git diff whitespace checks passed. No backend/physics changes, so no repeat of the known Windows HTTP suite failure was necessary.
+- Real browser: trained seed107 crashed, showed separated panels/legs; rewind restored intact craft; replay repeated the effect; 2D fallback displayed fragments; inspection retained recorded terminal values. Reviewed no remaining actionable findings.

@@ -164,6 +164,13 @@ and comparison pairs for the current page session; reloading clears them.
 Experiment metadata includes loaded model hashes, runtime settings and RNG
 states. Decorative terrain, dust and lighting do not affect simulator physics.
 
+Confirmed crashes break the rendered hull into panels, detach the legs and
+scatter sparks and dust over a 1.8-second cosmetic aftermath. Wreckage remains
+at the impact site. The simulation timeline and telemetry hold their final
+recorded values throughout; debris is not a structural-damage simulation.
+Rewinding restores the intact craft, and reduced motion shows settled wreckage.
+The retained 2D view also displays the separated fragments.
+
 ## Checks
 
 Run the CLI and demo API checks (headless, including two 1,024-step training segments):
