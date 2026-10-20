@@ -18,22 +18,64 @@ function surfaceTexture(){
   const bytes=new Uint8Array(128*128*4);
   for(let i=0;i<128*128;i++){const v=100+random(i)*85;bytes[i*4]=v;bytes[i*4+1]=v;bytes[i*4+2]=v;bytes[i*4+3]=255;}
   const texture=new T.DataTexture(bytes,128,128);texture.wrapS=texture.wrapT=T.RepeatWrapping;
-  texture.repeat.set(.16,.16);texture.needsUpdate=true;return texture;
+  texture.repeat.set(1.8,1.8);texture.magFilter=T.LinearFilter;texture.minFilter=T.LinearMipmapLinearFilter;
+  texture.generateMipmaps=true;texture.anisotropy=4;texture.needsUpdate=true;return texture;
 }
-function makeCraft(frame,color=0xff7a43,ghost=false){
+function scorchedTexture(color){
+  const rgb=new T.Color(color).convertLinearToSRGB(),bytes=new Uint8Array(128*128*4);
+  for(let y=0;y<128;y++)for(let x=0;x<128;x++){
+    const i=(y*128+x)*4,noise=random(x+y*128),u=x/128,v=y/128;
+    const soot=Math.max(0,1-Math.hypot((u-.3)*1.5,(v-.18)*1.3));
+    const stain=.32+.68*(1-soot*soot),scratch=noise>.987&&x%7<2;
+    const shade=scratch?.48:stain*(.8+noise*.2);
+    bytes[i]=Math.min(255,rgb.r*255*shade+noise*12);bytes[i+1]=Math.min(255,rgb.g*255*shade+noise*10);bytes[i+2]=Math.min(255,rgb.b*255*shade+noise*8);bytes[i+3]=255;
+  }
+  const map=new T.DataTexture(bytes,128,128);map.colorSpace=T.SRGBColorSpace;map.magFilter=T.LinearFilter;map.needsUpdate=true;return map;
+}
+function bentGeometry(geometry,amount=.035){
+  const p=geometry.attributes.position;
+  for(let i=0;i<p.count;i++){
+    const x=p.getX(i),y=p.getY(i),z=p.getZ(i);
+    p.setXYZ(i,x+amount*Math.sin(y*26+z*7),y-amount*Math.cos(x*19),z+amount*Math.sin(x*18+y*11));
+  }p.needsUpdate=true;geometry.computeVertexNormals();return geometry;
+}
+function detailedOutline(points){return points.flatMap((p,i)=>{const q=points[(i+1)%points.length];return Array.from({length:5},(_,j)=>p.map((v,k)=>v+(q[k]-v)*j/5));});}
+function softTexture(){
+  const bytes=new Uint8Array(64*64*4);
+  for(let y=0;y<64;y++)for(let x=0;x<64;x++){
+    const i=(y*64+x)*4,r=Math.hypot(x-32,y-32)/32;
+    bytes[i]=bytes[i+1]=bytes[i+2]=155;
+    bytes[i+3]=Math.max(0,1-r)**2*(.65+.35*Math.sin(x*.34)*Math.sin(y*.27))*255;
+  }
+  const map=new T.DataTexture(bytes,64,64);map.magFilter=T.LinearFilter;map.needsUpdate=true;return map;
+}
+function makeCraft(frame,color=0xff7a43,ghost=false,damaged=false){
   const root=new T.Group(), craft=new T.Group();root.add(craft);
   const c=Math.cos(-frame.angle),s=Math.sin(-frame.angle),pos=frame.position;
   const local=frame.bodies[0].map(([x,y])=>[(x-pos[0])*c-(y-pos[1])*s,(x-pos[0])*s+(y-pos[1])*c]);
-  const hull=material(ghost?0x5ed4e6:0xd2d1c6,{transparent:ghost,opacity:ghost?.35:1,wireframe:ghost});
-  mesh(shapeGeometry(local,.46),hull,craft);
+  const paint=color=>damaged&&!ghost?material(0xffffff,{map:scorchedTexture(color),roughness:.84,metalness:.5}):material(color);
+  const hull=ghost?material(0x5ed4e6,{transparent:true,opacity:.35,wireframe:true}):damaged?paint(0xd2d1c6):material(0xd2d1c6);
+  mesh(damaged?bentGeometry(shapeGeometry(detailedOutline(local),.46),.065):shapeGeometry(local,.46),hull,craft);
   if(!ghost){
-    mesh(new T.BoxGeometry(1.04,.13,.48),material(color),craft,0,-.06,0);
+    mesh(damaged?bentGeometry(new T.BoxGeometry(1.04,.13,.48,16,2,4),.05):new T.BoxGeometry(1.04,.13,.48),paint(color),craft,0,-.06,0);
     const ring=mesh(new T.CylinderGeometry(.16,.16,.07,24),material(0x26343c),craft,0,.22,.27);ring.rotation.x=Math.PI/2;
-    const window=mesh(new T.CircleGeometry(.12,24),material(0x68bbce,{emissive:0x174d65,emissiveIntensity:.7,metalness:.65,roughness:.18}),craft,0,.22,.309);
-    mesh(new T.CylinderGeometry(.13,.21,.24,20,1,true),material(0x30363b),craft,0,-.46,0);
+    const window=mesh(new T.CircleGeometry(.12,24),material(damaged?0x26353b:0x68bbce,{emissive:damaged?0:0x174d65,emissiveIntensity:.7,metalness:.65,roughness:damaged?.65:.18}),craft,0,.22,.309);
+    if(damaged){ring.scale.set(1,.72,1);window.scale.set(1,.72,1);}
+    const nozzle=new T.CylinderGeometry(.13,.21,.24,24,6,true);
+    mesh(damaged?bentGeometry(nozzle,.045):nozzle,damaged?paint(0x676074):material(0x30363b),craft,0,-.46,0);
     mesh(new T.BoxGeometry(.04,.28,.04),material(0x7d8483),craft,.28,.64,0);
     const dish=mesh(new T.SphereGeometry(.1,12,8),material(0xc4d0ca),craft,.28,.8,0);dish.scale.y=.3;
     for(const x of [-.38,.38])mesh(new T.BoxGeometry(.09,.05,.07),material(0xf8d5a3),craft,x,.4,.25);
+    if(damaged){
+      const hole=mesh(shapeGeometry([[-.18,-.18],[.18,-.22],[.25,.03],[.11,.15],[-.2,.07]],.018),material(0x101518,{roughness:1}),craft,.12,-.08,.3);
+      for(let i=0;i<4;i++){
+        const pipe=mesh(new T.CylinderGeometry(.018,.018,.28,7),paint(0x6d7478),craft,.03+i*.055,-.08,.33);pipe.rotation.z=(i-1.5)*.2;
+      }
+      const cable=new T.CatmullRomCurve3([new T.Vector3(.22,.03,.34),new T.Vector3(.37,-.12,.36),new T.Vector3(.25,-.34,.31)]);
+      mesh(new T.TubeGeometry(cable,12,.012,6,false),material(0x1a2022),craft);
+      const cracks=new T.BufferGeometry().setFromPoints([new T.Vector3(-.08,.24,.313),new T.Vector3(.06,.19,.313),new T.Vector3(.06,.19,.313),new T.Vector3(.09,.29,.313)]);
+      craft.add(new T.LineSegments(cracks,new T.LineBasicMaterial({color:0x080e11})));
+    }
   }
   const legs=frame.bodies.slice(1).map(points=>{
     const center=points.reduce((a,p)=>[a[0]+p[0]/points.length,a[1]+p[1]/points.length],[0,0]);
@@ -71,13 +113,29 @@ function trailFor(flight,color,dashed=false){
 function makeWreck(flight,ghost=false){
   if(flight.outcome!=='crashed')return null;
   const root=new T.Group();root.name=ghost?'reference-wreckage':'crash-wreckage';root.visible=false;
-  const parts=wreckagePose(flight,0).map((piece,i)=>mesh(shapeGeometry(piece.points,piece.kind==='leg'?.15:.46),
-    material(ghost?0x60d6e9:piece.kind==='leg'?0x687078:[0xb5b3a9,0x34393c,0xb35b35][i%3],
-      {roughness:.95,metalness:.3,wireframe:ghost,transparent:ghost,opacity:ghost?.45:1}),root));
+  const parts=wreckagePose(flight,0).map((piece,i)=>mesh(bentGeometry(shapeGeometry(detailedOutline(piece.points),piece.kind==='leg'?.055:.018),.025),
+    material(ghost?0x60d6e9:0xffffff,
+      {map:ghost?null:scorchedTexture(piece.kind==='leg'?0x626b71:i===2?0xdc7948:0xbab7a9),roughness:.83,metalness:.6,wireframe:ghost,transparent:ghost,opacity:ghost?.45:1}),root));
   const impact=flight.frames.at(-1).position;
-  const scorch=mesh(new T.CircleGeometry(1.35,28),new T.MeshBasicMaterial({color:0x17191a,transparent:true,opacity:.55,depthWrite:false}),root,
-    impact[0],groundHeight(flight.world,impact[0])+.025,0);scorch.rotation.x=-Math.PI/2;scorch.visible=!ghost;
-  const clouds=[{count:32,color:0xffbc71,size:.05,life:.65},{count:64,color:0xafa38e,size:.16,life:CRASH_SECONDS}].map(spec=>{
+  // Keep the same fuselage, band, window and nozzle; crush their geometry in place.
+  const core=makeCraft(flight.frames[0],0xff7a43,ghost,true);core.root.name='collapsed-craft';core.craft.name='crushed-fuselage';root.add(core.root);
+  core.update(samplePose(flight,flight.steps));
+  core.root.children.filter(child=>child!==core.craft).forEach(leg=>{leg.visible=false;});
+  const base=groundHeight(flight.world,impact[0]);
+  const haze=softTexture();
+  const scorch=mesh(new T.PlaneGeometry(3.1,2.3),new T.MeshBasicMaterial({color:0x101211,map:haze,transparent:true,opacity:.8,depthWrite:false}),root,
+    impact[0],base+.018,0);scorch.rotation.x=-Math.PI/2;scorch.castShadow=false;scorch.visible=!ghost;
+  const rimGeometry=new T.RingGeometry(.5,1.25,48,5);rimGeometry.rotateX(-Math.PI/2);
+  const rimPositions=rimGeometry.attributes.position;
+  for(let i=0;i<rimPositions.count;i++){
+    const x=rimPositions.getX(i),z=rimPositions.getZ(i),r=Math.hypot(x,z),angle=Math.atan2(z,x);
+    rimPositions.setY(i,groundHeight(flight.world,impact[0]+x)-base+.008+Math.sin((r-.5)/.75*Math.PI)*(.075+.035*Math.sin(angle*9)));
+  }rimGeometry.computeVertexNormals();
+  const rim=mesh(rimGeometry,material(0x62605a,{roughness:1,metalness:0,map:surfaceTexture(),side:T.DoubleSide}),root,impact[0],base,0);rim.visible=!ghost;
+  const smoke=Array.from({length:7},(_,i)=>{
+    const puff=new T.Sprite(new T.SpriteMaterial({map:haze,color:0x899196,transparent:true,opacity:.12,depthWrite:false}));root.add(puff);return puff;
+  });
+  const clouds=[{count:8,color:0xe9a76a,size:.018,life:.45},{count:40,color:0x8d887c,size:.065,life:CRASH_SECONDS}].map(spec=>{
     const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(spec.count*3),3));
     const points=new T.Points(geometry,new T.PointsMaterial({color:spec.color,size:spec.size,transparent:true,depthWrite:false}));root.add(points);
     return {...spec,points};
@@ -86,17 +144,27 @@ function makeWreck(flight,ghost=false){
   function update(age,reducedMotion){
     const time=reducedMotion?CRASH_SECONDS:Math.max(0,Math.min(CRASH_SECONDS,age));
     wreckagePose(flight,time).forEach((piece,i)=>{parts[i].position.set(...piece.position);parts[i].rotation.set(...piece.rotation);});
+    const collapse=Math.min(1,time/.65);
+    core.craft.position.set(impact[0],impact[1]*(1-collapse)+(base+.43)*collapse,0);
+    core.craft.rotation.set(-.22*collapse,.18*collapse,flight.frames.at(-1).angle+.58*collapse);
+    core.craft.scale.set(1,.98-.36*collapse,1-.12*collapse);
+    smoke.forEach((puff,i)=>{
+      const rise=(i/7+time*.22)%1;
+      puff.position.set(impact[0]+.12+Math.sin(i+time*.4)*rise*.16,base+.35+rise*.95,.1);
+      const size=.13+rise*.38;puff.scale.set(size,size*1.45,1);
+      puff.material.opacity=(1-rise)*.13;puff.visible=!ghost&&!reducedMotion&&time>.15;
+    });
     for(const cloud of clouds){
       cloud.points.visible=!ghost&&!reducedMotion&&time<cloud.life;
-      cloud.points.material.opacity=Math.max(0,1-time/cloud.life)*.65;
+      cloud.points.material.opacity=Math.max(0,1-time/cloud.life)*.28;
       const positions=cloud.points.geometry.attributes.position;
       for(let i=0;i<cloud.count;i++){
-        const angle=random(i+4100)*Math.PI*2,speed=.6+random(i+4200)*3;
+        const angle=random(i+4100)*Math.PI*2,speed=.15+random(i+4200)*.75;
         const x=impact[0]+Math.cos(angle)*speed*time;
-        positions.setXYZ(i,x,Math.max(groundHeight(flight.world,x)+.06,impact[1]+random(i+4300)*2*time-2*time*time),Math.sin(angle)*speed*time);
+        positions.setXYZ(i,x,Math.max(groundHeight(flight.world,x)+.06,base+.12+random(i+4300)*.6*time-time*time),Math.sin(angle)*speed*time);
       }positions.needsUpdate=true;
     }
-    flash.intensity=ghost||reducedMotion?0:Math.max(0,1-time/.22)*10;
+    flash.intensity=ghost||reducedMotion?0:Math.max(0,1-time/.35)*.8;
   }
   return {root,update};
 }
@@ -144,7 +212,7 @@ export function buildFlightScene(input,reference=null){
   const refWreck=reference?makeWreck(reference,true):null;if(refWreck)scene.add(refWreck.root);
   const dustArray=new Float32Array(160*3),dustGeo=new T.BufferGeometry();dustGeo.setAttribute('position',new T.BufferAttribute(dustArray,3));
   const dust=new T.Points(dustGeo,new T.PointsMaterial({color:0xd3c4a7,size:.06,transparent:true,opacity:.38,depthWrite:false}));scene.add(dust);
-  const camera=new T.PerspectiveCamera(46,1,.05,250);let cameraReady=false;
+  const camera=new T.PerspectiveCamera(46,1,.05,250),cameraTarget=new T.Vector3();let cameraReady=false;
   function update(step,options={}){
     const pose=samplePose(flight,step);craft.update(pose);
     const ageFor=f=>crashAgeFor(f,step,options);
@@ -167,8 +235,13 @@ export function buildFlightScene(input,reference=null){
     let desired=new T.Vector3(target.x+7,target.y+6,25);
     if(!surface){target.x=pose.position[0]*.5+target.x*.5;target.y=(pose.position[1]+world.pad[2])/2+1;
       desired.set(target.x+5.5,target.y+4.4,Math.max(17,Math.abs(altitude)*1.22+8));}
-    if(!cameraReady||surface){camera.position.copy(desired);cameraReady=true;}else camera.position.lerp(desired,.065);
-    camera.lookAt(target);
+    if(!surface&&wreck&&pose.complete){
+      target.set(pose.position[0],groundHeight(world,pose.position[0])+.6,0);
+      desired.set(target.x+2.2,target.y+1.9,6.8);
+    }
+    if(!cameraReady||surface){camera.position.copy(desired);cameraTarget.copy(target);cameraReady=true;}
+    else{camera.position.lerp(desired,.065);cameraTarget.lerp(target,.065);}
+    camera.lookAt(cameraTarget);
   }
   function dispose(){
     const geometries=new Set(),materials=new Set(),textures=new Set();

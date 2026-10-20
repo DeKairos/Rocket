@@ -169,7 +169,11 @@ scatter sparks and dust over a 1.8-second cosmetic aftermath. Wreckage remains
 at the impact site. The simulation timeline and telemetry hold their final
 recorded values throughout; debris is not a structural-damage simulation.
 Rewinding restores the intact craft, and reduced motion shows settled wreckage.
-The retained 2D view also displays the separated fragments.
+The retained 2D view also displays the separated fragments. In 3D the aftermath
+reuses the original craft's fuselage, orange band, window and nozzle, with dented
+geometry, scorched paint, torn shell strips and exposed tubing. A shallow soil
+rim, impact stain and faint residual smoke provide context. The chase view eases
+closer after a crash; Surface and reduced-motion views keep a fixed camera.
 
 ## Checks
 

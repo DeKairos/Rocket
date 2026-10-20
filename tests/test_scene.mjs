@@ -142,3 +142,19 @@ test('shorter crashed comparisons finish their cosmetic tail after the shared ti
   assert.equal(data.crashAgeFor(f,100,{endStep:100,crashAge:1.8}),1.8);
   assert.equal(data.crashAgeFor(f,99,{endStep:100,crashAge:1.8}),0);
 });
+
+test('wreckage remains close to impact and uses torn shell strips instead of solid wedges',()=>{
+  const f={...fixture,outcome:'crashed',seed:107,world:{pad:[8,12,3],terrain:[[0,3],[20,3]]},frames:fixture.frames.map(frame=>({...frame,bodies:[[[3.5,4],[4.5,4],[4.5,5],[3.5,5]],[[3,3],[3.1,3],[3.1,3.6]],[[5,3],[5.1,3],[5.1,3.6]]]}))};
+  const impact=data.wreckagePose(f,0),rest=data.wreckagePose(f,1.8);
+  assert.ok(impact.filter(p=>p.kind==='hull').every(p=>p.points.length===4));
+  assert.ok(rest.every((p,i)=>Math.abs(p.position[0]-impact[i].position[0])<1));
+});
+
+test('damaged comparison references remain transparent wireframe',async()=>{
+  const {buildFlightScene}=await import('../rocket_ui/modules/renderer-3d.mjs');
+  const f={...fixture,outcome:'crashed',seed:107,world:{width:20,height:13.333,pad:[8,12,3],terrain:[[0,3],[20,3]]},frames:fixture.frames.map(frame=>({...frame,bodies:[[[3.5,4],[4.5,4],[4,5]],[[3,3],[3.1,3],[3,3.6]],[[5,3],[5.1,3],[5,3.6]]]}))};
+  const view=buildFlightScene(f,f);view.update(2,{reducedMotion:true});
+  const hull=view.scene.getObjectByName('reference-wreckage').getObjectByName('crushed-fuselage').children[0];
+  assert.equal(hull.material.wireframe,true);assert.ok(hull.material.opacity<1);
+  view.dispose();
+});

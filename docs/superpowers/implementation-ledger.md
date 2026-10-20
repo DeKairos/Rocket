@@ -39,3 +39,11 @@
 - Tests first failed for absent wreckage/clock, then passed. Actual 3D visibility/rewind regression passed. Independent review identified a shorter-comparison crash that could freeze mid-burst; reproduced RED with expected0 vs actual1.8, fixed shared terminal offset, verified GREEN.
 - Verification: Node16/16 passed; asset integrity/import closure1/1 passed; app syntax and git diff whitespace checks passed. No backend/physics changes, so no repeat of the known Windows HTTP suite failure was necessary.
 - Real browser: trained seed107 crashed, showed separated panels/legs; rewind restored intact craft; replay repeated the effect; 2D fallback displayed fragments; inspection retained recorded terminal values. Reviewed no remaining actionable findings.
+
+## Wreckage realism refinement — 2026-10-20
+
+- User art direction: same recognizable craft severely damaged, bent/crushed metal, scorched white/orange paint, exposed internals, shallow crater, subtle smoke and fading embers. Refines the approved crash effect rather than replacing the flight model.
+- Reused makeCraft with a damaged variant for the fuselage/band/window/nozzle; dented geometry, soot/scratch material maps, a broken glass overlay and exposed pipes/cable. Thin curled shell strips replace solid colored wedges; compact spread follows pre-impact speed.
+- Added terrain-following shallow soil rim and soft impact stain. Reduced flash/spark intensity and added soft smoke wisps. Aftermath camera eases closer in Chase; inspection and reduced-motion camera behavior remain preserved.
+- Tests: new shell-strip/compact-spread regression observed RED then GREEN. Added ghost damaged-hull wireframe regression (RED then GREEN). Complete Node18/18 passed; asset closure1/1 passed. Independent focused review reported no actionable findings on disposal, comparisons, replay or reduced motion.
+- Accuracy: this is a procedural cosmetic visualization of the existing lander, not a photorealistic structural failure simulation. Physics, recorded bodies, telemetry and outcome criteria unchanged.

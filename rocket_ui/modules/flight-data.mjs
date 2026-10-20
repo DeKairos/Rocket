@@ -94,17 +94,20 @@ export function wreckagePose(flight,seconds,reducedMotion=false){
   const frame=flight.frames.at(-1),hull=frame.bodies[0];
   const center=points=>points.reduce((sum,p)=>[sum[0]+p[0]/points.length,sum[1]+p[1]/points.length],[0,0]);
   const hub=center(hull);
-  const pieces=hull.map((p,i)=>({kind:'hull',points:[hub,p,hull[(i+1)%hull.length]]}));
+  const inner=p=>p.map((v,i)=>v*.55+hub[i]*.45);
+  const pieces=hull.map((p,i)=>{const q=hull[(i+1)%hull.length];return {kind:'hull',points:[p,q,inner(q),inner(p)]};});
   pieces.push(...frame.bodies.slice(1).map(points=>({kind:'leg',points})));
   const age=reducedMotion?CRASH_SECONDS:Math.max(0,Math.min(CRASH_SECONDS,seconds));
   return pieces.map(({kind,points},i)=>{
     const origin=center(points),seed=i+(flight.seed||0)*17;
-    const spread=(fragmentRandom(seed+30)-.5)*5,travel=1-Math.exp(-age*2.5);
+    const velocity=flight.frames.at(-2)?.velocity||[0,0];
+    const severity=Math.min(1,Math.hypot(...velocity)/8);
+    const spread=(fragmentRandom(seed+30)-.5)*(.6+severity*.9),travel=1-Math.exp(-age*2.5);
     const x=origin[0]+spread*travel;
     const y=Math.max(terrainHeight(flight.world,x)+.10,
-      origin[1]+(.8+fragmentRandom(seed+60)*2.4)*age-4.8*age*age);
+      origin[1]+(.15+fragmentRandom(seed+60)*severity*.7)*age-4.8*age*age);
     return {kind,points:points.map(p=>[p[0]-origin[0],p[1]-origin[1]]),
-      position:[x,y,(fragmentRandom(seed+90)-.5)*2*travel],
-      rotation:[age*(fragmentRandom(seed+120)-.5)*3,age*(fragmentRandom(seed+150)-.5)*3,age*(fragmentRandom(seed+180)-.5)*5]};
+      position:[x,y,(fragmentRandom(seed+90)-.5)*.65*travel],
+      rotation:[travel*(Math.PI/2+(fragmentRandom(seed+120)-.5)*.3),travel*(fragmentRandom(seed+150)-.5)*.6,travel*(fragmentRandom(seed+180)-.5)*2]};
   });
 }
