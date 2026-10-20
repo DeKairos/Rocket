@@ -3,6 +3,10 @@
 Train an AI to land a rocket using Gymnasium's 2D Lunar Lander and PPO.
 Runs locally on CPU, with no API keys or paid services.
 
+The [first measured experiment](RESULTS.md) reached 16 safe landings in 20
+held-out flights with its final policy, compared with 0/20 for random actions.
+It includes training details, failure cases, and local replay commands.
+
 ## Setup (PowerShell)
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run from this folder:
@@ -12,6 +16,60 @@ uv sync --python 3.12
 ```
 
 The included `uv.lock` pins dependency versions for reproducible installs.
+
+## Mission-control UI
+
+```powershell
+uv run rocket demo
+```
+
+Opens **http://127.0.0.1:8000** with a custom flight deck: an animated lunar
+surface, engine plumes, flight trails, live playback telemetry, and a flight
+recorder. No Node.js installation or frontend build is needed.
+
+- Choose the **trained pilot**, **best checkpoint**, or **pure chaos** random controller.
+- **Head to head** runs the selected learned policy and random controller on
+  the same seed and terrain, with synchronized playback.
+- Pause, replay, scrub the timeline, cycle **0.5× / 1× / 2× / 4×**, or go fullscreen.
+- New launches draw a fresh seed by default. Edit the seed or uncheck
+  **New conditions each launch** to reproduce a particular starting state.
+- In Single flight, use **Push left / Push right** (or **A / D** outside a
+  control) to disturb the craft. Each push adds 1.5 simulator units/s of
+  horizontal velocity. The simulator reruns from the same seed, applies your
+  impulse at the selected frame, and computes subsequent policy decisions
+  from the changed state. Playback pauses briefly while it recomputes.
+  Earlier frames remain unchanged. Up to 12 pushes are retained in the
+  trajectory, including when replaying from the session recorder. Scrubbing
+  backward and pushing replaces pushes at or after that frame.
+- Press **Enter** to launch from the seed field; **Space** toggles playback
+  when focus is outside an interactive control.
+- Fixed seeds **100**, **105**, and **107** show a landing, timeout, and crash with
+  this machine's final trained policy. Outcomes depend on the loaded model.
+
+The backend generates a real Gymnasium episode on each launch. The browser
+plays its recorded Box2D geometry and policy actions at the simulator's 50 Hz,
+with interpolated animation. Pushes branch that simulation; the model weights
+stay fixed, so recovery uses an existing policy rather than learning during
+the flight. Telemetry is in simulator units; outcomes use the
+same classifier as CLI evaluation. The scene's distant planet and ridgeline
+are decorative. Flights are not scripted, and the UI does not run training.
+
+Defaults use the experiment's local `runs/continued/final_model.zip` and
+`runs/continued/best/best_model.zip`. Connect another run explicitly:
+
+```powershell
+uv run rocket demo --model runs/first/final_model.zip --best-model runs/first/best/best_model.zip
+```
+
+A fresh clone has no model artifacts; random flights still work, and missing
+learned policies are disabled. Train a policy first to enable them. The landing
+gap panel reads `runs/random.json`, `runs/trained-final.json`, and
+`runs/trained-best.json` when present. These are labeled recorded experiment
+results, not automatically recomputed statistics for a newly selected model.
+Session flight history stays in memory until the page is reloaded.
+
+Use `--port 8001` if port 8000 is occupied, or `--no-browser` to start the
+server without opening a tab. Stop the local server with **Ctrl+C**.
 
 ## Watch, train, compare
 
@@ -27,6 +85,19 @@ Train a policy (Ctrl+C saves the current policy before exiting):
 uv run rocket train --steps 1000000 --run runs/first
 ```
 
+Continue from a saved policy or checkpoint using a new run folder:
+
+```powershell
+uv run rocket train --resume runs/first/checkpoints/rl_model_700000_steps.zip --steps 300000 --run runs/continued
+```
+
+With `--resume`, `--steps` is the **additional** budget. Network weights,
+optimizer state, hyperparameters, and the step counter are restored. The
+simulator starts a fresh episode using `--seed` (default 42), so this is not
+an exact replay of uninterrupted training. The new `config.json` records the
+source checkpoint and starting step count. Checkpoint and evaluation intervals
+restart from the beginning of the new training segment.
+
 Replay the learned controller:
 
 ```powershell
@@ -37,10 +108,11 @@ Measure before and after on the same held-out starting seeds:
 
 ```powershell
 uv run rocket evaluate --random --episodes 20 --output runs/random.json
-uv run rocket evaluate --model runs/first/final_model.zip --episodes 20 --output runs/trained.json
+uv run rocket evaluate --model runs/first/final_model.zip --episodes 20 --output runs/trained-final.json
+uv run rocket evaluate --model runs/first/best/best_model.zip --episodes 20 --output runs/trained-best.json
 ```
 
-Both commands default to starting seed 100 and increment it for each flight.
+Evaluation commands default to starting seed 100 and increment it for each flight.
 Use the same `--seed` and `--episodes` when comparing controllers; seeds must
 be nonnegative. JSON reports include reward statistics, outcome counts, a
 `landing_rate` from 0 to 1, and a `flights` list recording each flight's seed,
@@ -70,15 +142,25 @@ Evaluation reports both reward and actual landing outcomes: a high score alone
 is not counted as a safe landing. The conventional score target is 200; use more
 episodes and several training seeds before claiming reliable performance.
 
-This first version uses the simulator's native 2D graphics. The reel's polished
-3D rocket view would be a separate visualization layer.
+`watch` uses the simulator's native 2D graphics. `demo` uses a custom browser
+Canvas renderer of the same physics, with no changes to the learned controller.
 
 ## Checks
 
-Run the CLI regression checks (headless, no training required):
+Run the CLI and demo API checks (headless, including two 1,024-step training segments):
 
 ```powershell
 uv run python -m unittest discover -s tests -v
+```
+
+The demo checks compare browser trajectories against CLI evaluation for both
+controllers, exercise input errors and missing models, and verify packaged assets.
+They also check that pushes preserve earlier frames and produce repeatable
+branches. To check frontend launch, push, rewind, replay and error state handling
+with Node.js (no packages needed):
+
+```powershell
+node --test tests/test_ui.cjs
 ```
 
 References: [Lunar Lander](https://gymnasium.farama.org/environments/box2d/lunar_lander/)

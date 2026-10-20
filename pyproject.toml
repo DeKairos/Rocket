@@ -16,4 +16,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["rocket"]
+py-modules = ["rocket", "rocket_demo"]
+packages = ["rocket_ui"]
+
+[tool.setuptools.package-data]
+rocket_ui = ["*.html", "*.css", "*.js", "*.svg"]

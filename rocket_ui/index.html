@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ed">
+  <meta name="description" content="A front-row seat to a neural network learning to land. Real physics. Real policy. One very small landing pad.">
+  <title>ROCKET — Mission Control</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <a class="wordmark" href="/" aria-label="Rocket mission control home"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="m18 3 9 23H9ZM11 19 5 29h9m11-10 6 10h-9M15 29l3 5 3-5" fill="currentColor"/><circle cx="18" cy="18" r="2.5" fill="var(--paper)"/></svg>ROCKET<span class="wordmark-dot">®</span></a>
+      <nav class="top-nav" aria-label="Main navigation"><a class="active" href="#flight-deck">Mission control <span>01</span></a><a href="#intelligence">The intelligence <span>02</span></a></nav>
+      <div class="connection"><span class="status-dot" id="connection-dot"></span><span id="connection-label">CONNECTING</span><span class="local-badge">LOCAL / CPU</span></div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div><div class="eyebrow"><span class="tiny-cross">✳</span> REINFORCEMENT LEARNING, IN FLIGHT</div><h1 id="page-title">Gravity is a given.<br>Landing is <span>learned.</span><svg class="title-orbit" viewBox="0 0 90 50" aria-hidden="true"><ellipse cx="45" cy="25" rx="40" ry="14" transform="rotate(-24 45 25)"/><path d="m74 7 7 6-9 2"/><circle cx="45" cy="25" r="6"/></svg></h1></div>
+        <div class="intro-aside"><div class="edition"><span>EXPERIMENT 001</span><span class="edition-mark">↗</span></div><p>Give it a difficult approach.<br>Push it off balance mid-flight.<br><strong>See whether it can recover.</strong></p><div class="tech-tags"><span>GYMNASIUM</span><span>PPO</span><span>BOX2D</span></div></div>
+      </section>
+
+      <section class="mission" id="flight-deck" aria-label="Interactive flight demonstration">
+        <div class="mission-toolbar"><div class="deck-name"><span class="crosshair-icon">⊕</span> THE FLIGHT DECK <span class="version">/ V.01</span></div><div class="mode-switch" role="group" aria-label="Flight view"><button class="selected" data-mode="solo" aria-pressed="true">Single flight</button><button data-mode="compare" aria-pressed="false"><span class="split-icon">◫</span> Head to head</button></div><div class="physics-badge"><span></span> REAL PHYSICS · 50 HZ</div></div>
+
+        <div class="deck-grid">
+          <aside class="flight-config" aria-label="Flight configuration">
+            <div class="panel-heading"><span>01 / FLIGHT PLAN</span><span>↗</span></div>
+            <label class="field-label" id="pilot-label">WHO'S FLYING?</label>
+            <div class="pilot-options" role="group" aria-labelledby="pilot-label">
+              <button class="pilot-card selected" data-policy="trained" aria-pressed="true"><span class="pilot-symbol">✳</span><span><strong>Trained pilot</strong><small>PPO neural network</small></span><span class="radio-mark"></span></button>
+              <button class="pilot-card" data-policy="best" aria-pressed="false"><span class="pilot-symbol">◇</span><span><strong>Best checkpoint</strong><small>Validation-selected</small></span><span class="radio-mark"></span></button>
+              <button class="pilot-card" data-policy="random" aria-pressed="false"><span class="pilot-symbol random-symbol">⤨</span><span><strong>Pure chaos</strong><small>Random actions. No plan.</small></span><span class="radio-mark"></span></button>
+            </div>
+            <div class="seed-heading"><label class="field-label" for="seed">STARTING SEED</label><button id="shuffle" class="text-button" aria-label="Choose a random starting seed">SHUFFLE ↗</button></div>
+            <div class="seed-input"><span>#</span><input id="seed" type="number" min="0" max="4294967295" value="100" step="1" inputmode="numeric" aria-describedby="seed-hint"></div><p class="input-hint" id="seed-hint">Seed sets the terrain and initial motion.</p>
+            <label class="fresh-start"><input id="fresh-start" type="checkbox" checked> New conditions each launch</label>
+            <button id="launch" class="launch-button"><span class="launch-icon">↗</span><span id="launch-text">Launch flight</span><kbd>↵</kbd></button>
+            <p class="launch-hint" id="launch-hint">Push it during flight. See how it responds.</p>
+            <div class="config-bottom"><div class="mini-orbit" aria-hidden="true"><span></span><i></i></div><span>SMALL CRAFT.<br>BIG LEARNING CURVE.</span></div>
+          </aside>
+
+          <div class="viewport-column">
+            <div class="space-view" id="space-view">
+              <canvas id="flight-canvas" aria-label="Animated Lunar Lander flight with terrain, thrusters, and trajectory" role="img"></canvas>
+              <div class="view-top"><div class="live-chip"><span></span><span id="flight-state">SYSTEM READY</span></div><span id="view-seed">LUNAR SURFACE / SEED 100</span></div>
+              <div class="view-coordinate" aria-hidden="true">LNDR—01<br>GRAVITY / −10.00 u/s² <span>LUNAR LANDER V3</span></div>
+              <div class="canvas-label" id="canvas-pilot">PPO / TRAINED PILOT</div><div class="canvas-label second-label" id="canvas-random" hidden>RND / PURE CHAOS</div>
+              <div class="view-empty" id="view-empty"><div class="orbit-art" aria-hidden="true"><div></div><div></div><span>✳</span></div><span class="eyebrow">THE MOON IS WAITING.</span><h2>Let’s stick the landing.</h2><p>Pick a pilot. Set the seed. Light the engines.</p><button id="first-launch">Initiate mission <span>↗</span></button></div>
+              <div class="loading-overlay" id="loading-overlay" hidden><div class="loading-orbit"></div><span id="loading-label">RUNNING SIMULATION</span><small>Policy decisions from the physical state</small></div>
+              <div class="result-banner" id="result-banner" hidden role="status"><span class="result-icon" id="result-icon">↗</span><div><span class="result-kicker" id="result-kicker">MISSION COMPLETE</span><strong id="result-title">Touchdown.</strong><span id="result-detail"></span></div><button id="replay-result" aria-label="Replay this flight">↺</button></div>
+              <div class="view-bottom"><span id="view-time">T+00.00</span><span class="view-center-note">BOX2D / INTERACTIVE TRAJECTORY</span><span id="frame-counter">FRAME 0000</span></div>
+            </div>
+            <div class="intervention-bar"><div><strong>Change its flight</strong><span id="intervention-note" role="status">Launch, then give it a sideways push.</span></div><div class="push-controls"><button id="push-left" disabled aria-label="Push craft left">← Push <kbd>A</kbd></button><button id="push-right" disabled aria-label="Push craft right">Push → <kbd>D</kbd></button></div></div>
+            <div class="playback"><button id="play-pause" class="play-button" aria-label="Pause playback" disabled>Ⅱ</button><button id="restart" class="restart-button" aria-label="Restart playback" disabled>↺</button><span class="playback-time" id="playback-time">00:00 <span>/ 00:00</span></span><label class="sr-only" for="timeline">Flight timeline</label><input id="timeline" type="range" min="0" max="1" value="0" step="1" disabled><button id="speed" class="speed-button" aria-label="Playback speed: 1 times">1×</button><button id="fullscreen" class="fullscreen-button" aria-label="Toggle flight deck fullscreen">⛶</button></div>
+          </div>
+
+          <aside class="telemetry" aria-label="Flight telemetry">
+            <div class="panel-heading"><span>02 / TELEMETRY</span><span class="telemetry-pulse">⌁</span></div>
+            <div class="metric"><div class="metric-label">ALTITUDE <span>SIM UNITS</span></div><div class="metric-number"><span id="altitude">—</span><small>u</small></div><svg class="sparkline" id="altitude-chart" viewBox="0 0 180 24" aria-hidden="true"><path/></svg></div>
+            <div class="metric"><div class="metric-label">VERTICAL VELOCITY <span>↓ / ↑</span></div><div class="metric-number"><span id="velocity">—</span><small>u/s</small></div><svg class="sparkline" id="velocity-chart" viewBox="0 0 180 24" aria-hidden="true"><path/></svg></div>
+            <div class="attitude-row"><div><div class="metric-label">ATTITUDE</div><div class="small-number"><span id="angle">—</span><small>°</small></div></div><div class="attitude" aria-hidden="true"><div id="attitude-needle"></div><span></span></div></div>
+            <div class="reward-row"><div class="metric-label">CUMULATIVE REWARD</div><div id="reward">+0.0</div></div>
+            <div class="action-panel"><div class="metric-label">POLICY OUTPUT <span>4 ACTIONS</span></div><div class="action-buttons" aria-label="Current engine action"><span data-action="0" title="Coast">○</span><span data-action="1" title="Left side engine">↘</span><span data-action="2" title="Main engine">↑</span><span data-action="3" title="Right side engine">↙</span></div><div class="action-name" id="action-name">AWAITING INFERENCE</div></div>
+            <div class="contact-row"><span>LANDING GEAR</span><span id="left-contact">L <i></i></span><span id="right-contact">R <i></i></span></div>
+          </aside>
+        </div>
+        <div class="mission-footer"><div><span class="status-dot"></span><span id="mission-message" role="status">All systems nominal. Ready when you are.</span></div><span>8 INPUTS → 2 HIDDEN LAYERS → 4 ACTIONS</span></div>
+      </section>
+      <div id="error-banner" class="error-banner" hidden role="alert"><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
+
+      <section class="intelligence" id="intelligence" aria-labelledby="intelligence-title">
+        <div class="intelligence-title"><span class="eyebrow">LESS GUESSWORK. MORE TOUCHDOWNS.</span><h2 id="intelligence-title">A million steps.<br>A little more instinct.</h2><p>One training seed. Twenty held-out flights.<br>Here’s what the actual experiment measured.</p><a href="#flight-deck" id="compare-link">See the difference yourself <span>↗</span></a></div>
+        <div class="benchmark-card"><div class="benchmark-heading"><span>THE LANDING GAP</span><span>HELD-OUT EVALUATION ↗</span></div><div class="benchmark-bars"><div class="benchmark-bar-row"><div><span class="bar-dot orange"></span><strong>Trained pilot</strong><span id="trained-fraction">— / —</span></div><div class="bar-track"><span class="trained-bar" id="trained-bar"></span></div></div><div class="benchmark-bar-row"><div><span class="bar-dot dark"></span><strong>Random controller</strong><span id="random-fraction">— / —</span></div><div class="bar-track"><span class="random-bar" id="random-bar"></span></div></div></div><div class="benchmark-bottom"><div><strong id="landing-rate">—<span>%</span></strong><small>TRAINED LANDING RATE</small></div><div><strong id="mean-reward">—</strong><small>MEAN EPISODE REWARD</small></div><div class="benchmark-note" id="benchmark-note">Loading local<br>evaluation reports.</div></div></div>
+      </section>
+
+      <section class="flight-log" aria-label="Session flight log"><div class="log-heading"><div><span class="eyebrow">THE FLIGHT RECORDER</span><h2>Every attempt counts.</h2></div><span id="log-count">00 FLIGHTS THIS SESSION</span></div><div class="log-table-wrap"><table><thead><tr><th>FLIGHT</th><th>PILOT</th><th>SEED</th><th>REWARD</th><th>FLIGHT TIME</th><th>OUTCOME</th><th><span class="sr-only">Replay</span></th></tr></thead><tbody id="flight-log"><tr class="empty-log"><td colspan="7"><span>↗</span> Your first flight is the start of the story.</td></tr></tbody></table></div></section>
+    </main>
+    <footer class="site-footer"><span class="footer-wordmark">ROCKET<span>®</span></span><p>Built to fall.<br>Trained to land.</p><span>NO API KEYS. NO CLOUD.<br>JUST A VERY DETERMINED NEURAL NETWORK.</span><a href="#page-title" aria-label="Back to top">↑</a></footer>
+  </div>
+</body>
+</html>

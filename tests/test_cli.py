@@ -29,6 +29,47 @@ class CliTests(unittest.TestCase):
                 self.assertNotIn("Traceback", result.stderr)
                 self.assertEqual(result.stdout, "")
 
+    def test_resume_preserves_steps_and_original_run(self):
+        from stable_baselines3 import PPO
+
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first"
+            resumed = Path(directory) / "resumed"
+            result = self.run_cli("train", "--steps", "1024", "--run", str(first))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            checkpoint = first / "final_model.zip"
+            original = checkpoint.read_bytes()
+            result = self.run_cli(
+                "train", "--steps", "1024", "--resume", str(checkpoint),
+                "--run", str(resumed),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = json.loads((resumed / "config.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["starting_steps"], 1024)
+            self.assertEqual(config["requested_steps"], 1024)
+            self.assertEqual(config["resumed_from"], str(checkpoint.resolve()))
+            model = PPO.load(resumed / "final_model.zip", device="cpu")
+            self.assertEqual(model.num_timesteps, 2048)
+            self.assertEqual(checkpoint.read_bytes(), original)
+            result = self.run_cli(
+                "train", "--steps", "1", "--resume", str(checkpoint),
+                "--run", str(first),
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("is not empty", result.stderr)
+            self.assertEqual(checkpoint.read_bytes(), original)
+
+    def test_missing_resume_checkpoint_does_not_create_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory) / "run"
+            result = self.run_cli(
+                "train", "--resume", str(Path(directory) / "missing.zip"),
+                "--run", str(run),
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Checkpoint does not exist", result.stderr)
+            self.assertFalse(run.exists())
+
     def test_evaluation_is_repeatable_and_flights_match_summary(self):
         reports = []
         with tempfile.TemporaryDirectory() as directory:
