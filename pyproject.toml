@@ -20,4 +20,4 @@ py-modules = ["rocket", "rocket_demo", "rocket_experiment"]
 packages = ["rocket_ui"]
 
 [tool.setuptools.package-data]
-rocket_ui = ["*.html", "*.css", "*.js", "*.svg"]
+rocket_ui = ["*.html", "*.css", "*.js", "*.svg", "modules/*.mjs", "vendor/three/*.js", "vendor/three/*.json", "vendor/three/LICENSE"]

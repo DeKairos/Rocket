@@ -6,3 +6,4 @@ runs/
 build/
 dist/
 .playwright-mcp/
+.test-tmp/

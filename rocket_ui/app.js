@@ -1,529 +1,212 @@
-'use strict';
+import {FlightController} from './modules/flight-state.mjs';
+import {frameAt} from './modules/flight-data.mjs';
+import {RendererHost} from './modules/renderer-host.mjs';
+import {AnalysisView} from './modules/analysis.mjs';
 
-const $ = (id) => document.getElementById(id);
-const names = { trained: 'Trained pilot', best: 'Best checkpoint', random: 'Pure chaos' };
-const actions = ['COAST / ENGINES IDLE', 'LEFT SIDE ENGINE', 'MAIN ENGINE FIRING', 'RIGHT SIDE ENGINE'];
-const outcomes = { landed: 'LANDED', crashed: 'CRASHED', timeout: 'TIME LIMIT', out_of_bounds: 'OUT OF BOUNDS' };
-const state = { policy: 'trained', mode: 'solo', flights: [], step: 0, playing: false,
-  speed: 1, busy: false, status: null, logged: false, history: [], lastTime: 0, maxSteps: 0 };
-const canvas = $('flight-canvas');
-const ctx = canvas.getContext('2d');
-let width = 0, height = 0;
+const $=id=>document.getElementById(id);
+const names={trained:'Trained pilot',best:'Best checkpoint',random:'Random controller'};
+const actions=['Coast / engines idle','Left side engine','Main engine','Right side engine'];
+const outcomes={landed:'Landing confirmed.',crashed:'Hull impact.',timeout:'Time limit reached.',out_of_bounds:'Craft left the flight area.'};
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const narrow=matchMedia('(max-width: 760px)');
+const options={camera:reducedMotion.matches?'surface':'chase',split:false};
+let status=null,dirty=true,flightSignature='',historySignature='',lastUi=0,lastTime=0,lastDraw=0;
+let focusReturn=null,announceSignature='',lastPerformanceUpdate=0;
+const frameIntervals=[],renderCosts=[];
 
-function resize() {
-  const bounds = $('space-view').getBoundingClientRect();
-  width = bounds.width; height = bounds.height;
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-}
-new ResizeObserver(resize).observe($('space-view'));
-
-function randomAt(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
-function path(points, close = false) {
-  ctx.beginPath();
-  points.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-  if (close) ctx.closePath();
-}
-function line(x1, y1, x2, y2, color, dash = []) {
-  ctx.beginPath(); ctx.strokeStyle = color; ctx.setLineDash(dash);
-  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
-}
-
-function drawBackground(w, h, seed = 100) {
-  const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, '#101a22'); gradient.addColorStop(.63, '#14232a'); gradient.addColorStop(1, '#1c2c2d');
-  ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
-  const glow = ctx.createRadialGradient(w * .65, h * .7, 0, w * .65, h * .7, w * .6);
-  glow.addColorStop(0, '#54745d13'); glow.addColorStop(1, '#54745d00');
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 100; i++) {
-    const x = randomAt(i + seed * .001) * w, y = randomAt(i + 200) * h * .85;
-    const bright = randomAt(i + 400);
-    ctx.fillStyle = `rgba(190,210,203,${.12 + bright * .4})`;
-    ctx.fillRect(x, y, bright > .95 ? 1.7 : .8, bright > .95 ? 1.7 : .8);
-    if (bright > .985) {
-      line(x - 3, y + .5, x + 4, y + .5, '#bfd6c522');
-      line(x + .5, y - 3, x + .5, y + 4, '#bfd6c522');
-    }
-  }
-  ctx.lineWidth = .5;
-  for (let x = 20; x < w; x += 40) line(x, 0, x, h, '#9ab3a304');
-  for (let y = 20; y < h; y += 40) line(0, y, w, y, '#9ab3a304');
-  // A distant, stylized planet is scenery only; all flight geometry comes from Box2D.
-  const px = w * .82, py = h * .22, pr = Math.min(w, h) * .065;
-  const planet = ctx.createRadialGradient(px - pr * .3, py - pr * .4, 0, px, py, pr);
-  planet.addColorStop(0, '#8b9c8340'); planet.addColorStop(.8, '#74896e2a'); planet.addColorStop(1, '#586f6120');
-  ctx.fillStyle = planet; ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
-  ctx.save(); ctx.translate(px, py); ctx.rotate(-.5); ctx.strokeStyle = '#83967920';
-  ctx.beginPath(); ctx.ellipse(0, 0, pr * 1.6, pr * .32, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-  // Instrument corner brackets.
-  const inset = 8, length = 9;
-  ctx.strokeStyle = '#b5c6b82b'; ctx.lineWidth = 1;
-  for (const [x, y, dx, dy] of [[inset, inset, 1, 1], [w - inset, inset, -1, 1],
-    [inset, h - inset, 1, -1], [w - inset, h - inset, -1, -1]]) {
-    path([[x, y + dy * length], [x, y], [x + dx * length, y]]); ctx.stroke();
-  }
-}
-
-const previewWorld = { width: 20, height: 13.333, pad: [8, 12, 3.333], terrain:
-  [[0, 3.5], [2, 4.5], [4, 4.2], [6, 3.5], [8, 3.333], [10, 3.333],
-    [12, 3.333], [14, 3.7], [16, 4.6], [18, 4.2], [20, 4.8]] };
-
-function drawScene(flight, w, h, step, index) {
-  const world = flight?.world || previewWorld;
-  drawBackground(w, h, flight?.seed || 100);
-  const scale = Math.min(w / 24, h / 17.5);
-  const offset = (w - world.width * scale) / 2;
-  const floor = h * .85 + world.pad[2] * scale;
-  const project = ([x, y]) => [offset + x * scale, floor - y * scale];
-  const padY = project([10, world.pad[2]])[1];
-  // Far ridgeline adds depth without changing the physical foreground terrain.
-  const ridge = [[-5, 4], [-2, 5.6], [1, 4.4], [4, 6.8], [7, 4.6], [9, 4.8], [12, 4.2],
-    [14, 5.4], [17, 6.3], [20, 5], [24, 7], [24, -3], [-5, -3]].map(project);
-  path(ridge, true); ctx.fillStyle = '#283a3525'; ctx.fill();
-  const terrain = world.terrain.map(project);
-  const ground = [[0, terrain[0][1]], ...terrain, [w, terrain[terrain.length - 1][1]], [w, h], [0, h]];
-  path(ground, true);
-  const groundFill = ctx.createLinearGradient(0, padY - 30, 0, h);
-  groundFill.addColorStop(0, '#344036'); groundFill.addColorStop(1, '#222d29');
-  ctx.fillStyle = groundFill; ctx.fill();
-  path([[0, terrain[0][1]], ...terrain, [w, terrain[terrain.length - 1][1]]]);
-  ctx.strokeStyle = '#97a37b55'; ctx.lineWidth = 1; ctx.stroke();
-  // Surface contour lines, clipped to the exact simulator terrain.
-  ctx.save(); path(ground, true); ctx.clip();
-  for (let i = 0; i < 8; i++) {
-    path(terrain.map(([x, y], j) => [x, y + 10 + i * 11 + Math.sin(j * 2 + i) * 6]));
-    ctx.strokeStyle = '#a8b48b0b'; ctx.lineWidth = .7; ctx.stroke();
-  }
-  for (let i = 0; i < 70; i++) {
-    const x = randomAt(i + 700) * w, y = padY - 25 + randomAt(i + 800) * (h - padY + 25);
-    ctx.fillStyle = '#c7d0a71a'; ctx.fillRect(x, y, 1.5, .6);
-  }
-  ctx.restore();
-  const [padLeft] = project([world.pad[0], world.pad[2]]), [padRight] = project([world.pad[1], world.pad[2]]);
-  const padCenter = (padLeft + padRight) / 2;
-  ctx.shadowColor = '#f15c3544'; ctx.shadowBlur = 14;
-  line(padLeft, padY, padRight, padY, '#e78b5b'); ctx.shadowBlur = 0;
-  line(padLeft + 2, padY + 3, padRight - 2, padY + 3, '#d5855440');
-  for (const x of [padLeft, padRight]) {
-    line(x, padY, x, padY - 16, '#97ab83aa');
-    path([[x, padY - 16], [x + 8, padY - 13], [x, padY - 10]], true);
-    ctx.fillStyle = index === 1 ? '#ba9069' : '#d88d61'; ctx.fill();
-    ctx.fillStyle = '#ffc598'; ctx.fillRect(x - 1, padY - 1, 2, 2);
-  }
-  ctx.font = '5px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
-  ctx.fillStyle = '#b1b89888'; ctx.fillText('L A N D I N G   Z O N E', padCenter, padY + 15);
-  ctx.fillStyle = '#a0ac8244'; ctx.fillText('—  0 1  —', padCenter, padY + 25);
-  line(padCenter, padY - 5, padCenter, 100, '#becba110', [2, 5]);
-
-  if (!flight) return;
-  const n = Math.min(Math.floor(step), flight.frames.length - 1);
-  const frame = flight.frames[n];
-  const next = flight.frames[Math.min(n + 1, flight.frames.length - 1)];
-  const t = step >= flight.steps ? 0 : step % 1;
-  const lerp = (a, b) => a + (b - a) * t;
-  const position = frame.position.map((v, i) => lerp(v, next.position[i]));
-  const [rx, ry] = project(position);
-  for (const push of flight.interventions || []) {
-    if (push.step > n) continue;
-    const [x, y] = project(flight.frames[push.step].position);
-    ctx.font = '13px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffb484';
-    ctx.fillText(push.direction < 0 ? '←' : '→', x, y - 14);
-  }
-  // Actual recorded path.
-  if (n > 1) {
-    path(flight.frames.slice(0, n + 1).filter((_, i) => i % 3 === 0).map((f) => project(f.position)));
-    ctx.strokeStyle = index === 1 ? '#cd9b6866' : '#b5c8aa66'; ctx.lineWidth = .9;
-    ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
-    for (let i = 0; i <= n; i += 35) {
-      const [x, y] = project(flight.frames[i].position);
-      ctx.fillStyle = '#d5e4be66'; ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-  const complete = step >= flight.steps;
-  const crashed = complete && flight.outcome === 'crashed';
-  // Height guide follows the actual craft.
-  if (rx > 18 && rx < w - 18 && ry > 70 && ry < padY - 25) {
-    line(rx + 18, ry, rx + 18, padY, '#afc49922', [2, 4]);
-    line(rx + 15, ry, rx + 21, ry, '#afc49955');
-    ctx.font = '5px "IBM Plex Mono", monospace'; ctx.fillStyle = '#c1d2af88'; ctx.textAlign = 'left';
-    ctx.fillText(`${Math.max(0, position[1] - world.pad[2]).toFixed(1)} u`, rx + 23, (ry + padY) / 2);
-  }
-  // Thruster glow is driven by the recorded discrete engine action.
-  ctx.save(); ctx.translate(rx, ry); ctx.rotate(-lerp(frame.angle, next.angle));
-  if (!complete) {
-    if (frame.action === 2) {
-      const flicker = .85 + randomAt(n * 4.3) * .4;
-      const flameLength = scale * 1.4 * flicker;
-      const glow = ctx.createRadialGradient(0, scale * .7, 0, 0, scale * .7, scale * 1.6);
-      glow.addColorStop(0, '#ff7b3844'); glow.addColorStop(1, '#ff7b3800');
-      ctx.fillStyle = glow; ctx.fillRect(-scale * 2, 0, scale * 4, scale * 3);
-      const fire = ctx.createLinearGradient(0, scale * .3, 0, flameLength + scale * .3);
-      fire.addColorStop(0, '#fff7cc'); fire.addColorStop(.25, '#ffd694'); fire.addColorStop(.6, '#f88a46'); fire.addColorStop(1, '#f15c3500');
-      path([[-scale * .21, scale * .32], [-scale * .14, scale * .7], [0, scale * .32 + flameLength],
-        [scale * .15, scale * .7], [scale * .21, scale * .32]], true);
-      ctx.fillStyle = fire; ctx.fill();
-      path([[-scale * .09, scale * .32], [0, scale * .9], [scale * .09, scale * .32]], true);
-      ctx.fillStyle = '#fff6c9'; ctx.fill();
-    } else if (frame.action === 1 || frame.action === 3) {
-      const side = frame.action === 1 ? -1 : 1;
-      path([[side * scale * .45, -scale * .35], [side * scale * 1.05, -scale * .15],
-        [side * scale * .45, -scale * .2]], true);
-      ctx.fillStyle = '#ffca8a'; ctx.shadowColor = '#f15c35'; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
-    }
-  }
-  ctx.restore();
-  // Render the true Box2D fixture polygons, interpolated only between recorded frames.
-  for (let i = 2; i >= 0; i--) {
-    const points = frame.bodies[i].map((p, j) => project(p.map((v, k) => lerp(v, next.bodies[i][j][k]))));
-    path(points, true);
-    if (i === 0) {
-      const bodyFill = ctx.createLinearGradient(rx - scale * .5, ry, rx + scale * .5, ry);
-      bodyFill.addColorStop(0, crashed ? '#806650' : '#b4c1ae');
-      bodyFill.addColorStop(.45, crashed ? '#c2865b' : '#eff2df'); bodyFill.addColorStop(1, '#899986');
-      ctx.fillStyle = bodyFill; ctx.strokeStyle = '#f3e7c1'; ctx.lineWidth = .8;
-    } else { ctx.fillStyle = '#819580'; ctx.strokeStyle = '#c9d2b8'; ctx.lineWidth = .65; }
-    ctx.fill(); ctx.stroke();
-  }
-  // Fuselage details are cosmetic; the collision silhouette above is unmodified.
-  ctx.save(); ctx.translate(rx, ry); ctx.rotate(-lerp(frame.angle, next.angle));
-  ctx.fillStyle = index === 1 ? '#b38a65' : '#e77343'; ctx.fillRect(-scale * .4, scale * .04, scale * .8, scale * .14);
-  ctx.fillStyle = '#213d47'; ctx.strokeStyle = '#748d86'; ctx.lineWidth = .6;
-  ctx.beginPath(); ctx.ellipse(0, -scale * .22, scale * .16, scale * .14, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#c4e1db66'; ctx.fillRect(-scale * .07, -scale * .3, scale * .08, scale * .035);
-  ctx.restore();
-  // Contact light and terminal impact field.
-  if (complete && flight.outcome === 'landed') {
-    ctx.strokeStyle = '#bacba066'; ctx.lineWidth = .7;
-    ctx.beginPath(); ctx.ellipse(rx, padY, scale * 1.5, scale * .2, 0, 0, Math.PI * 2); ctx.stroke();
-  }
-  if (crashed) {
-    const glow = ctx.createRadialGradient(rx, ry, 0, rx, ry, scale * 1.8);
-    glow.addColorStop(0, '#ed945536'); glow.addColorStop(1, '#ed945500');
-    ctx.fillStyle = glow; ctx.fillRect(rx - scale * 2, ry - scale * 2, scale * 4, scale * 4);
-  }
-  if (complete && state.flights.length === 2) {
-    ctx.font = '8px "IBM Plex Mono", monospace'; ctx.textAlign = 'center';
-    ctx.fillStyle = flight.outcome === 'landed' ? '#bfd8ad' : '#e1ad84';
-    ctx.fillText(outcomes[flight.outcome], w / 2, 120);
-  }
-}
-
-function draw() {
-  if (!width || !height) return;
-  ctx.clearRect(0, 0, width, height);
-  if (state.flights.length === 2) {
-    const w = width / 2;
-    state.flights.forEach((flight, i) => {
-      ctx.save(); ctx.beginPath(); ctx.rect(i * w, 0, w, height); ctx.clip(); ctx.translate(i * w, 0);
-      drawScene(flight, w, height, state.step, i); ctx.restore();
-    });
-    line(w, 50, w, height - 35, '#b0c4b830');
-    ctx.fillStyle = '#152228'; ctx.beginPath(); ctx.arc(w, height * .5, 13, 0, Math.PI * 2); ctx.fill();
-    ctx.font = '6px "IBM Plex Mono", monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#a0af9d';
-    ctx.fillText('VS', w, height * .5 + 2);
-  } else drawScene(state.flights[0], width, height, state.step, 0);
-}
-
-function sparkline(id, values) {
-  if (!values.length) return;
-  const min = Math.min(...values), max = Math.max(...values);
-  const points = values.map((value, i) => `${i ? 'L' : 'M'}${(i / Math.max(1, values.length - 1) * 180).toFixed(1)},${(22 - (value - min) / (max - min || 1) * 20).toFixed(1)}`);
-  $(id).querySelector('path').setAttribute('d', points.join(' '));
-}
-function clock(seconds) {
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
-}
-function refreshTelemetry() {
-  if (!state.flights.length) return;
-  const flight = state.flights[0], index = Math.min(Math.floor(state.step), flight.steps);
-  const frame = flight.frames[index];
-  $('altitude').textContent = Math.max(0, frame.position[1] - flight.world.pad[2]).toFixed(2);
-  $('velocity').textContent = `${frame.velocity[1] >= 0 ? '+' : ''}${frame.velocity[1].toFixed(2)}`;
-  const angle = frame.angle * 180 / Math.PI;
-  $('angle').textContent = angle.toFixed(1);
-  $('attitude-needle').style.transform = `rotate(${-angle}deg)`;
-  $('reward').textContent = `${frame.reward >= 0 ? '+' : ''}${frame.reward.toFixed(1)}`;
-  $('reward').style.color = frame.reward >= 0 ? 'var(--green)' : 'var(--orange)';
-  document.querySelectorAll('[data-action]').forEach((el) => el.classList.toggle('active', Number(el.dataset.action) === frame.action));
-  $('action-name').textContent = index === flight.steps ? 'POLICY / EPISODE COMPLETE' : actions[frame.action];
-  $('left-contact').classList.toggle('contact', frame.contacts[0]);
-  $('right-contact').classList.toggle('contact', frame.contacts[1]);
-  const recent = flight.frames.slice(Math.max(0, index - 150), index + 1).filter((_, i) => i % 3 === 0);
-  sparkline('altitude-chart', recent.map((f) => f.position[1]));
-  sparkline('velocity-chart', recent.map((f) => f.velocity[1]));
-  $('view-time').textContent = `T+${(state.step / flight.fps).toFixed(2).padStart(5, '0')}`;
-  $('frame-counter').textContent = `FRAME ${String(Math.floor(state.step)).padStart(4, '0')}`;
-  $('playback-time').innerHTML = `${clock(state.step / flight.fps)} <span>/ ${clock(state.maxSteps / flight.fps)}</span>`;
-  $('timeline').value = Math.floor(state.step);
-  updatePushControls();
-  if (!state.busy && state.step < state.maxSteps) {
-    const drift = frame.velocity[0];
-    $('mission-message').textContent = frame.contacts.every(Boolean) ? 'Both legs in contact. Waiting for the craft to settle.' :
-      frame.contacts.some(Boolean) ? 'One leg in contact. Still moving.' :
-      `${Math.abs(drift).toFixed(2)} u/s ${drift < 0 ? 'left' : 'right'} · ${Math.abs(angle).toFixed(1)}° tilt · ${actions[frame.action].toLowerCase()}`;
-  }
-}
-
-function updatePushControls() {
-  const flight = state.flights[0];
-  const disabled = state.busy || state.flights.length !== 1 || state.step >= state.maxSteps ||
-    (flight?.interventions?.length || 0) >= 12;
-  $('push-left').disabled = disabled; $('push-right').disabled = disabled;
-}
-
-async function pushCraft(direction) {
-  if ($('push-left').disabled) return;
-  const flight = state.flights[0], step = Math.floor(state.step);
-  // Scrubbing back and pushing creates a new branch, dropping future pushes.
-  const interventions = (flight.interventions || []).filter((p) => p.step < step);
-  interventions.push({ step, direction });
-  const wasPlaying = state.playing;
-  state.busy = true; setPlaying(false); updatePushControls();
-  $('launch').disabled = true; $('error-banner').hidden = true;
-  $('loading-label').textContent = 'RECOMPUTING AFTER YOUR PUSH';
-  $('loading-overlay').hidden = false;
-  try {
-    const query = new URLSearchParams({ policy: flight.policy, seed: flight.seed,
-      interventions: JSON.stringify(interventions) });
-    const changed = await request(`/api/flight?${query}`);
-    state.flights = [changed]; state.maxSteps = changed.steps;
-    state.logged = false;
-    $('timeline').max = changed.steps;
-    $('result-banner').hidden = true;
-    $('intervention-note').textContent = `Pushed ${direction < 0 ? 'left' : 'right'} at ${(step / flight.fps).toFixed(2)}s · ${interventions.length}/12 pushes`;
-    setPlaying(wasPlaying); refreshTelemetry();
-  } catch (error) { showError(error.message || 'Could not recompute this flight. Try again.'); setPlaying(wasPlaying); }
-  finally {
-    state.busy = false; $('loading-overlay').hidden = true; $('launch').disabled = false;
-    updatePushControls();
-  }
-}
-
-function showError(message) {
-  $('error-message').textContent = message; $('error-banner').hidden = false;
-  $('mission-message').textContent = 'Mission held. Check the message below the flight deck.';
-}
-async function request(url) {
-  const response = await fetch(url);
-  let data;
-  try { data = await response.json(); } catch { throw new Error('Unexpected server response. Restart rocket demo and try again.'); }
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+async function request(url){
+  const response=await fetch(url);let data;
+  try{data=await response.json();}catch{throw Error('The simulator returned an incomplete response. The previous flight is retained.');}
+  if(!response.ok)throw Error(data.error||`Request failed (${response.status}).`);
   return data;
 }
-function setPolicy(policy) {
-  if (state.busy || !state.status?.policies[policy]) return;
-  state.policy = policy;
-  document.querySelectorAll('[data-policy]').forEach((button) => {
-    const selected = button.dataset.policy === policy;
-    button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected));
-  });
-}
-function setMode(mode) {
-  if (state.busy) return;
-  state.mode = mode;
-  document.querySelectorAll('[data-mode]').forEach((button) => {
-    const selected = button.dataset.mode === mode;
-    button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected));
-  });
-  if (mode === 'compare' && state.policy === 'random') {
-    setPolicy(state.status?.policies.trained ? 'trained' : 'best');
-  }
-  $('launch-text').textContent = mode === 'compare' ? 'Launch showdown' : 'Launch flight';
-  $('launch-hint').textContent = mode === 'compare' ? 'Selected pilot vs. random. Identical seed.' : 'Push it during flight. See how it responds.';
-  if (state.flights.length) $('mission-message').textContent = 'Flight plan updated. Launch to apply the new configuration.';
-}
-function setPlaying(playing) {
-  state.playing = playing;
-  $('play-pause').textContent = playing ? 'Ⅱ' : '▶';
-  $('play-pause').setAttribute('aria-label', playing ? 'Pause playback' : 'Play playback');
-  const complete = state.flights.length && state.step >= state.maxSteps;
-  $('flight-state').textContent = complete ? 'MISSION COMPLETE' : playing ? 'FLIGHT PLAYBACK' : state.flights.length ? 'PLAYBACK PAUSED' : 'SYSTEM READY';
-  document.querySelector('.live-chip').classList.toggle('running', playing);
-}
-function presentFlights(flights, record = true) {
-  state.flights = flights; state.step = 0; state.maxSteps = Math.max(...flights.map((f) => f.steps));
-  state.logged = !record;
-  $('intervention-note').textContent = flights.length === 2 ? 'Switch to Single flight to push the craft.' :
-    flights[0].interventions?.length ? `${flights[0].interventions.length} recorded pushes · replay includes their effects.` : 'Push adds 1.5 u/s sideways. Can the pilot recover?';
-  $('view-empty').hidden = true; $('result-banner').hidden = true;
-  $('canvas-pilot').textContent = flights[0].policy === 'random' ? 'RND / PURE CHAOS' : flights[0].policy === 'best' ? 'PPO / BEST CHECKPOINT' : 'PPO / TRAINED PILOT';
-  $('canvas-random').hidden = flights.length !== 2;
-  $('space-view').classList.toggle('compare', flights.length === 2);
-  $('view-seed').textContent = `LUNAR SURFACE / SEED ${flights[0].seed}`;
-  $('timeline').max = state.maxSteps; $('timeline').disabled = false;
-  $('play-pause').disabled = false; $('restart').disabled = false;
-  const steps = flights[0].model_steps;
-  $('mission-message').textContent = flights.length === 2 ? 'Same physics. Same seed. Two very different approaches.' :
-    steps ? `Policy loaded · ${steps.toLocaleString()} training steps · weights stay fixed during flight.` : 'Random controller loaded. Each action comes from the seeded random generator.';
-  setPlaying(true); refreshTelemetry();
-}
+const host=new RendererHost({canvas3d:$('flight-canvas-3d'),canvas2d:$('flight-canvas-2d'),onStatus(text){
+  $('render-mode').textContent=text;$('graphics-toggle').textContent=host.mode==='3D'?'2D view':'Retry 3D';dirty=true;
+}});
+const controller=new FlightController(request,syncUI);
+const analysis=new AnalysisView($('analysis-drawer'),step=>controller.seek(step));
 
-async function launch() {
-  if (state.busy || !state.status) return;
-  const seedInput = $('seed');
-  if ($('fresh-start').checked) seedInput.value = crypto.getRandomValues(new Uint32Array(1))[0];
-  if (!seedInput.checkValidity() || seedInput.value.trim() === '') {
-    showError('Choose a whole-number seed between 0 and 4294967295.'); seedInput.focus(); return;
-  }
-  if (state.mode === 'compare' && state.policy === 'random') {
-    showError('Head to head needs a trained model. Use Single flight for the random controller.'); return;
-  }
-  state.busy = true; setPlaying(false); $('error-banner').hidden = true;
-  updatePushControls(); $('loading-label').textContent = 'RUNNING SIMULATION';
-  $('loading-overlay').hidden = false; $('launch').disabled = true;
-  document.querySelectorAll('[data-policy], [data-mode]').forEach((button) => { button.disabled = true; });
-  const seed = Number(seedInput.value);
-  try {
-    const policies = state.mode === 'compare' ? [state.policy, 'random'] : [state.policy];
-    const flights = await Promise.all(policies.map((policy) => request(`/api/flight?policy=${policy}&seed=${seed}`)));
-    presentFlights(flights);
-  } catch (error) { showError(error.message || 'Unable to reach mission control. Is rocket demo still running?'); }
-  finally {
-    state.busy = false; $('loading-overlay').hidden = true; $('launch').disabled = false;
-    document.querySelectorAll('[data-mode]').forEach((button) => { button.disabled = false; });
-    document.querySelectorAll('[data-policy]').forEach((button) => { button.disabled = !state.status.policies[button.dataset.policy]; });
-    updatePushControls();
-  }
-}
-function finish() {
-  setPlaying(false);
-  const flight = state.flights[0], success = flight.outcome === 'landed';
-  $('result-banner').hidden = false; $('result-banner').classList.toggle('failed', !success);
-  $('result-icon').textContent = success ? '↗' : '↘';
-  $('result-kicker').textContent = state.flights.length === 2 ? 'SAME START. DIFFERENT STORY.' : 'MISSION COMPLETE';
-  $('result-title').textContent = success ? 'Craft settled. Landing confirmed.' : flight.outcome === 'timeout' ? 'Time limit reached.' : flight.outcome === 'out_of_bounds' ? 'Craft left the flight area.' : 'Hull impact. Flight ended.';
-  $('result-detail').textContent = state.flights.length === 2 ?
-    `${names[flight.policy]}: ${outcomes[flight.outcome]} / Random: ${outcomes[state.flights[1].outcome]}` :
-    `${flight.reward.toFixed(1)} REWARD / ${(flight.steps / flight.fps).toFixed(2)}s / ${(flight.interventions || []).length} PUSH${flight.interventions?.length === 1 ? '' : 'ES'} / SEED ${flight.seed}`;
-  if (!state.logged) {
-    state.flights.forEach((f) => state.history.unshift({ flight: f, number: state.history.length + 1 }));
-    state.logged = true; renderLog();
-  }
-  $('mission-message').textContent = success ? 'Safe rest confirmed by simulator. Reward alone never counts as a landing.' :
-    `Flight ended: ${outcomes[flight.outcome].toLowerCase()}. Change the seed or try another pilot.`;
-  updatePushControls();
-}
-function replay() {
-  if (!state.flights.length || state.busy) return;
-  state.step = 0; $('result-banner').hidden = true; setPlaying(true); refreshTelemetry();
-}
-function togglePlayback() {
-  if (!state.flights.length || state.busy) return;
-  if (state.step >= state.maxSteps) replay(); else setPlaying(!state.playing);
-}
-function renderLog() {
-  $('log-count').textContent = `${String(state.history.length).padStart(2, '0')} FLIGHTS THIS SESSION`;
-  const tbody = $('flight-log'); tbody.replaceChildren();
-  state.history.forEach(({ flight, number }) => {
-    const tr = document.createElement('tr');
-    for (const text of [`FL—${String(number).padStart(3, '0')}`, names[flight.policy], `#${flight.seed}${flight.interventions?.length ? ` · ${flight.interventions.length} push${flight.interventions.length === 1 ? '' : 'es'}` : ''}`,
-      `${flight.reward >= 0 ? '+' : ''}${flight.reward.toFixed(1)}`, `${(flight.steps / flight.fps).toFixed(2)}s`]) {
-      const td = document.createElement('td'); td.textContent = text; tr.append(td);
+function time(seconds){const m=Math.floor(seconds/60);return `${String(m).padStart(2,'0')}:${(seconds-m*60).toFixed(2).padStart(5,'0')}`;}
+function enable(id,enabled){$(id).disabled=!enabled;}
+function announce(text){$('mission-message').textContent=text;}
+
+function syncUI(){
+  const s=controller.state,f=s.flights[0],has=Boolean(f),complete=has&&s.step>=s.maxSteps;
+  const signature=s.flights.map(item=>item.revision_id).join(':')+s.comparison;
+  if(signature!==flightSignature){
+    flightSignature=signature;host.setFlights(s.flights);analysis.setFlights(s.flights,s.comparison);
+    options.split=s.comparison==='random';
+    const markers=$('push-markers');markers.replaceChildren();
+    for(const push of f?.interventions||[]){
+      const button=document.createElement('button');button.style.left=`${push.step/s.maxSteps*100}%`;
+      button.setAttribute('aria-label',`Push ${push.direction<0?'left':'right'} at ${(push.step/f.fps).toFixed(2)} seconds`);
+      button.addEventListener('click',()=>{controller.seek(push.step);openInspection();});markers.append(button);
     }
-    const outcome = document.createElement('td'), chip = document.createElement('span');
-    chip.className = `outcome-chip${flight.outcome === 'landed' ? '' : ' failed'}`;
-    chip.textContent = outcomes[flight.outcome]; outcome.append(chip); tr.append(outcome);
-    const cell = document.createElement('td'), button = document.createElement('button');
-    button.className = 'table-replay'; button.textContent = '↗'; button.setAttribute('aria-label', `Replay flight ${number}`);
-    button.addEventListener('click', () => {
-      if (state.busy) return;
-      setMode('solo'); setPolicy(flight.policy); $('seed').value = flight.seed;
-      $('fresh-start').checked = false;
-      presentFlights([flight], false); $('flight-deck').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    cell.append(button); tr.append(cell); tbody.append(tr);
+  }
+  $('preview-copy').hidden=has;$('flight-legend').hidden=!has;
+  $('reference-legend').hidden=s.flights.length<2;
+  $('scene-id').textContent=has?`${names[f.policy].toUpperCase()} / SEED ${f.seed}`:'LUNAR LANDER · EXPERIMENT 001';
+  $('flight-state').textContent=s.busy?'COMPUTING / PLAYBACK HELD':complete?'EPISODE COMPLETE':s.playing?'SIMULATION PLAYBACK':has?'PLAYBACK PAUSED':'PREVIEW / NO FLIGHT RUNNING';
+  $('loading-overlay').hidden=!s.busy;
+  $('timeline').disabled=!has||s.busy;$('timeline').max=s.maxSteps||1;
+  enable('launch',Boolean(status)&&!s.busy);enable('setup-launch',Boolean(status)&&!s.busy);
+  enable('play-pause',has&&!s.busy);enable('restart',has&&!s.busy);enable('inspect',has&&!s.busy);
+  const retained=(f?.interventions||[]).filter(p=>p.step<Math.floor(s.step)).length;
+  const canPush=has&&!s.busy&&s.flights.length===1&&s.step<f.steps&&retained<12;
+  enable('disturb',canPush);enable('push-left',canPush);enable('push-right',canPush);
+  const canCompare=has&&!s.busy&&f.interventions.length>0&&s.comparison!=='counterfactual';
+  enable('counterfactual',canCompare);enable('result-compare',canCompare);
+  $('result-compare').hidden=!f?.interventions.length;
+  $('push-count').textContent=`${f?.interventions.length||0} / 12 pushes`;
+  $('play-pause').textContent=s.playing?'Ⅱ':'▶';$('play-pause').setAttribute('aria-label',s.playing?'Pause playback':'Play playback');
+  $('single-view').hidden=s.flights.length!==2;$('split-view').hidden=s.flights.length!==2;
+  $('split-view').setAttribute('aria-pressed',String(options.split));
+  $('analysis-drawer').hidden=!s.inspection;$('inspect').setAttribute('aria-expanded',String(s.inspection));
+  $('analysis-drawer').setAttribute('aria-modal',String(s.inspection&&narrow.matches));
+  document.body.classList.toggle('analysis-open',s.inspection);
+  $('result-banner').hidden=!complete;
+  if(complete){$('result-title').textContent=outcomes[f.outcome]||f.outcome;
+    $('result-detail').textContent=`${f.reward.toFixed(1)} REWARD / ${(f.steps/f.fps).toFixed(2)}s / ${f.interventions.length} PUSH${f.interventions.length===1?'':'ES'}`;}
+  $('error-banner').hidden=!s.error;if(s.error)$('error-message').textContent=s.error;
+  const newAnnouncement=[signature,s.busy,s.inspection,s.playing,complete,s.error].join('|');
+  if(newAnnouncement!==announceSignature){announceSignature=newAnnouncement;
+    announce(s.error|| (s.busy?'Computing the simulator trajectory. Previous flight retained.':
+      complete?`Simulator outcome: ${f.outcome}. Inspect the flight to see measured evidence.`:
+      s.inspection?'Scientific inspection. Plots and scene share the selected recorded frame.':
+      has?`${names[f.policy]} · ${f.interventions.length} recorded pushes · ${s.playing?'playback running':'playback paused'}.`:'Ready to launch a local simulator episode.'));
+  }
+  renderHistory();dirty=true;refreshTelemetry();
+}
+
+function refreshTelemetry(){
+  const s=controller.state,f=s.flights[0];if(!f)return;
+  const frame=frameAt(f,s.step);
+  $('altitude').textContent=(frame.position[1]-f.world.pad[2]).toFixed(2);
+  $('velocity').textContent=`${frame.velocity[1]>=0?'+':''}${frame.velocity[1].toFixed(2)}`;
+  $('action-name').textContent=frame.step===0?'Reset / no decision':frame.step===f.steps?'Episode complete':actions[frame.action];
+  $('tilt-label').textContent=`${(frame.angle*180/Math.PI).toFixed(1)}° tilt`;
+  $('frame-counter').textContent=`FRAME ${String(Math.floor(s.step)).padStart(4,'0')}`;
+  $('playback-time').textContent=time(s.step/f.fps);$('total-time').textContent=time(s.maxSteps/f.fps);
+  $('timeline').value=Math.floor(s.step);
+  $('primary-label').textContent=`${s.comparison==='counterfactual'?'Disturbed':names[f.policy]}${s.step>=f.steps?' · COMPLETE':''}`;
+  const ref=s.flights[1];if(ref)$('reference-label').textContent=`${s.comparison==='counterfactual'?'Without latest push':'Random controller'}${s.step>=ref.steps?' · COMPLETE':''}`;
+  if(s.inspection)analysis.update(s.step);
+  const retained=f.interventions.filter(p=>p.step<Math.floor(s.step)).length;
+  const allowed=!s.busy&&s.flights.length===1&&s.step<f.steps&&retained<12;
+  enable('push-left',allowed);enable('push-right',allowed);enable('disturb',allowed);
+}
+
+function renderHistory(){
+  const s=controller.state,signature=s.history.map(e=>e.id+e.reference).join(':');
+  if(signature===historySignature)return;historySignature=signature;
+  $('record-count').textContent=String(s.history.length).padStart(2,'0');
+  const list=$('record-list');list.replaceChildren();
+  s.history.forEach((entry,i)=>{
+    const f=s.records.get(entry.id),row=document.createElement('div');row.className='record-row';
+    const text=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('small');
+    title.textContent=`${names[f.policy]} · seed ${f.seed}`;
+    detail.textContent=`${f.interventions.length} pushes / ${entry.comparison==='counterfactual'?'MATCHED PAIR':entry.comparison==='random'?'VS RANDOM':'SAVED FLIGHT'} / ${f.revision_id.slice(0,10)}`;
+    text.append(title,detail);const button=document.createElement('button');button.textContent='Replay ↗';button.setAttribute('aria-label',`Replay session record ${s.history.length-i}`);
+    button.addEventListener('click',()=>{controller.select(entry);$('recorder-dialog').close();});
+    row.append(text,button);list.append(row);
   });
 }
 
-function renderBenchmarks(benchmarks) {
-  const trained = benchmarks.trained, random = benchmarks.random;
-  if (trained) {
-    $('trained-fraction').textContent = `${trained.outcomes.landed} / ${trained.episodes}`;
-    $('trained-bar').style.width = `${trained.landing_rate * 100}%`;
-    $('landing-rate').innerHTML = `${Math.round(trained.landing_rate * 100)}<span>%</span>`;
-    $('mean-reward').textContent = `${trained.mean_reward >= 0 ? '+' : ''}${trained.mean_reward.toFixed(1)}`;
-    $('benchmark-note').textContent = `Recorded experiment. ${trained.episodes} flights. Seeds ${trained.seed}–${trained.seed + trained.episodes - 1}. One training seed.`;
-  } else $('benchmark-note').textContent = 'No local evaluation report. Run the README evaluation commands to populate these results.';
-  if (random) {
-    $('random-fraction').textContent = `${random.outcomes.landed} / ${random.episodes}`;
-    $('random-bar').style.width = `${random.landing_rate * 100}%`;
+function openInspection(){
+  if(!controller.state.flights.length)return;focusReturn=document.activeElement;
+  controller.inspect(true);$('close-analysis').focus();
+}
+function closeInspection(){controller.inspect(false);(focusReturn?.disabled?$('inspect'):focusReturn||$('inspect')).focus();}
+function showError(message){controller.state.error=message;syncUI();}
+function chosenSeed(){
+  if($('fresh-start').checked)$('seed').value=crypto.getRandomValues(new Uint32Array(1))[0];
+  if(!$('seed').checkValidity()||$('seed').value.trim()==='')throw Error('Choose a whole-number seed between 0 and 4294967295.');
+  return Number($('seed').value);
+}
+async function launch(){
+  if(controller.state.busy||!status)return;
+  const policy=$('policy').value,compare=$('compare-random').checked;
+  if(compare&&policy==='random'){showError('Select a PPO pilot to compare with random, or turn off controller comparison.');return;}
+  try{const seed=chosenSeed();if($('setup-dialog').open)$('setup-dialog').close();await controller.launch(policy,seed,compare);}
+  catch(error){showError(error.message);}
+}
+async function compare(){if(await controller.compareWithoutPush())openInspection();}
+
+$('launch').addEventListener('click',launch);$('setup-launch').addEventListener('click',launch);
+$('play-pause').addEventListener('click',()=>controller.setPlaying(!controller.state.playing));
+$('restart').addEventListener('click',()=>{controller.seek(0);controller.setPlaying(true);});
+$('timeline').addEventListener('input',()=>controller.seek(Number($('timeline').value)));
+$('inspect').addEventListener('click',()=>controller.state.inspection?closeInspection():openInspection());
+$('result-inspect').addEventListener('click',openInspection);$('close-analysis').addEventListener('click',closeInspection);
+$('disturb').addEventListener('click',()=>{const open=$('push-panel').hidden;$('push-panel').hidden=!open;$('disturb').setAttribute('aria-expanded',String(open));});
+$('push-left').addEventListener('click',()=>controller.push(-1));$('push-right').addEventListener('click',()=>controller.push(1));
+$('counterfactual').addEventListener('click',compare);$('result-compare').addEventListener('click',compare);
+$('single-view').addEventListener('click',()=>controller.select(controller.state.flights[0].revision_id));
+$('split-view').addEventListener('click',()=>{options.split=!options.split;$('split-view').setAttribute('aria-pressed',String(options.split));dirty=true;});
+$('speed').addEventListener('click',()=>{const values=[.5,1,2,4];controller.state.speed=values[(values.indexOf(controller.state.speed)+1)%values.length];$('speed').textContent=`${controller.state.speed}×`;$('speed').setAttribute('aria-label',`Playback speed: ${controller.state.speed} times`);});
+for(const camera of ['chase','surface'])$(`camera-${camera}`).addEventListener('click',()=>{options.camera=camera;for(const key of ['chase','surface'])$(`camera-${key}`).setAttribute('aria-pressed',String(camera===key));dirty=true;});
+$('graphics-toggle').addEventListener('click',()=>host.mode==='3D'?host.use2D('2D view · recorded Box2D fixtures'):host.start());
+$('seed').addEventListener('input',()=>{$('fresh-start').checked=false;});
+$('shuffle').addEventListener('click',()=>{$('seed').value=crypto.getRandomValues(new Uint32Array(1))[0];$('fresh-start').checked=false;});
+$('dismiss-error').addEventListener('click',()=>{controller.state.error=null;syncUI();});
+for(const [button,dialog] of [['open-setup','setup-dialog'],['open-recorder','recorder-dialog'],['open-experiment','experiment-dialog']])$(button).addEventListener('click',()=>$(dialog).showModal());
+document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
+document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}}));
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&controller.state.inspection&&!document.querySelector('dialog[open]')){closeInspection();return;}
+  if(event.key==='Tab'&&controller.state.inspection&&narrow.matches){
+    const focusables=[...$('analysis-drawer').querySelectorAll('button,summary,[tabindex="0"]')].filter(el=>el.getClientRects().length);
+    const first=focusables[0],last=focusables.at(-1);
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   }
+  const editing=event.target.closest('input,select,textarea,button,a,[contenteditable],[role="slider"]');
+  if(event.code==='Enter'&&event.target===$('seed')){event.preventDefault();launch();return;}
+  if(editing||document.querySelector('dialog[open]'))return;
+  if(event.code==='Space'){event.preventDefault();controller.setPlaying(!controller.state.playing);}
+  if(event.code==='Enter'){event.preventDefault();launch();}
+  if(!event.repeat&&(event.code==='KeyA'||event.code==='KeyD')){event.preventDefault();controller.push(event.code==='KeyA'?-1:1);}
+});
+new ResizeObserver(()=>{host.resize();dirty=true;}).observe($('scene-wrap'));
+reducedMotion.addEventListener('change',()=>{if(reducedMotion.matches)options.camera='surface';dirty=true;});
+narrow.addEventListener('change',syncUI);
+document.addEventListener('visibilitychange',()=>{lastTime=0;lastDraw=0;});
+
+function animate(now){
+  const elapsed=lastTime?Math.min((now-lastTime)/1000,.1):0;lastTime=now;
+  if(document.hidden){requestAnimationFrame(animate);return;}
+  const s=controller.state,wasPlaying=s.playing;
+  controller.advance(elapsed);
+  if(wasPlaying||dirty){
+    const begin=performance.now();host.render(s.step,{...options,reducedMotion:reducedMotion.matches,inspect:s.inspection});
+    if(wasPlaying&&lastDraw&&now-lastDraw<250){frameIntervals.push(now-lastDraw);renderCosts.push(performance.now()-begin);if(frameIntervals.length>600){frameIntervals.shift();renderCosts.shift();}}
+    lastDraw=wasPlaying?now:0;dirty=false;
+  }
+  if(now-lastUi>80){refreshTelemetry();lastUi=now;}
+  if(frameIntervals.length>30&&now-lastPerformanceUpdate>600){
+    const sorted=[...frameIntervals].sort((a,b)=>a-b),average=frameIntervals.reduce((a,b)=>a+b,0)/frameIntervals.length;
+    const p95=sorted[Math.floor(sorted.length*.95)],cost=renderCosts.reduce((a,b)=>a+b,0)/renderCosts.length;
+    $('performance-label').textContent=`LAST PLAYBACK SAMPLE / ${(1000/average).toFixed(0)} Hz / P95 ${p95.toFixed(1)}ms`;
+    $('runtime-measurements').textContent=`${frameIntervals.length} playback frame intervals; mean ${average.toFixed(2)}ms, p95 ${p95.toFixed(2)}ms. Mean render submission ${cost.toFixed(2)}ms (CPU, not GPU timing). ${host.mode}, viewport ${innerWidth}×${innerHeight}, device pixel ratio ${devicePixelRatio}. This is a local sample, not a hardware-independent guarantee.`;
+    lastPerformanceUpdate=now;
+  }
+  requestAnimationFrame(animate);
 }
 
-document.querySelectorAll('[data-policy]').forEach((button) => button.addEventListener('click', () => {
-  if (state.mode === 'compare' && button.dataset.policy === 'random') setMode('solo');
-  setPolicy(button.dataset.policy);
-}));
-document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.mode)));
-document.querySelectorAll('[data-seed]').forEach((button) => button.addEventListener('click', () => { $('seed').value = button.dataset.seed; }));
-$('shuffle').addEventListener('click', () => { $('seed').value = crypto.getRandomValues(new Uint32Array(1))[0]; $('fresh-start').checked = false; });
-$('seed').addEventListener('input', () => { $('fresh-start').checked = false; });
-$('push-left').addEventListener('click', () => pushCraft(-1));
-$('push-right').addEventListener('click', () => pushCraft(1));
-$('launch').addEventListener('click', launch); $('first-launch').addEventListener('click', launch);
-$('play-pause').addEventListener('click', togglePlayback); $('restart').addEventListener('click', replay);
-$('replay-result').addEventListener('click', replay);
-$('dismiss-error').addEventListener('click', () => { $('error-banner').hidden = true; });
-$('timeline').addEventListener('input', () => {
-  if (state.busy) return;
-  state.step = Number($('timeline').value); setPlaying(false); $('result-banner').hidden = true;
-  refreshTelemetry(); if (state.step >= state.maxSteps) finish();
-});
-$('speed').addEventListener('click', () => {
-  const speeds = [.5, 1, 2, 4]; state.speed = speeds[(speeds.indexOf(state.speed) + 1) % speeds.length];
-  $('speed').textContent = `${state.speed}×`; $('speed').setAttribute('aria-label', `Playback speed: ${state.speed} times`);
-});
-$('fullscreen').addEventListener('click', async () => {
-  try {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else if ($('space-view').requestFullscreen) await $('space-view').requestFullscreen();
-    else showError('Fullscreen is unavailable in this browser.');
-  } catch { showError('Fullscreen could not start. Try opening the demo directly in your browser.'); }
-});
-$('compare-link').addEventListener('click', () => setMode('compare'));
-document.addEventListener('keydown', (event) => {
-  const editing = /INPUT|TEXTAREA|SELECT|BUTTON|A/.test(event.target.tagName);
-  if (event.code === 'Space' && !editing) { event.preventDefault(); togglePlayback(); }
-  if (event.code === 'Enter' && (!editing || event.target === $('seed'))) { event.preventDefault(); launch(); }
-  if (!editing && !event.repeat && (event.code === 'KeyA' || event.code === 'KeyD')) {
-    event.preventDefault(); pushCraft(event.code === 'KeyA' ? -1 : 1);
-  }
-});
-document.addEventListener('visibilitychange', () => { state.lastTime = 0; });
-
-let lastUiFrame = -1;
-function animate(now) {
-  const elapsed = state.lastTime ? Math.min((now - state.lastTime) / 1000, .1) : 0;
-  state.lastTime = now;
-  if (state.playing && !document.hidden && state.flights.length) {
-    state.step = Math.min(state.maxSteps, state.step + elapsed * state.flights[0].fps * state.speed);
-    if (state.step >= state.maxSteps) finish();
-  }
-  if (Math.floor(state.step) !== lastUiFrame) { refreshTelemetry(); lastUiFrame = Math.floor(state.step); }
-  draw(); requestAnimationFrame(animate);
-}
-requestAnimationFrame(animate);
-
-async function init() {
-  $('launch').disabled = true; $('first-launch').disabled = true;
-  try {
-    state.status = await request('/api/status');
-    $('connection-label').textContent = 'SIMULATOR ONLINE';
-    document.querySelectorAll('[data-policy]').forEach((button) => {
-      button.disabled = !state.status.policies[button.dataset.policy];
-      if (button.disabled) button.title = 'Model not found. Train a model or pass its path to rocket demo.';
-    });
-    if (!state.status.policies.trained) {
-      setPolicy(state.status.policies.best ? 'best' : 'random');
-      $('mission-message').textContent = 'Trained model not found. Random flights are ready; use --model to connect a trained policy.';
+async function init(){
+  host.start();requestAnimationFrame(animate);
+  try{
+    status=await request('/api/status');$('connection-label').textContent='SIMULATOR ONLINE';
+    for(const option of $('policy').options)option.disabled=!status.policies[option.value];
+    $('policy').value=status.policies.trained?'trained':status.policies.best?'best':'random';
+    $('model-note').textContent=status.policies.trained?'Local PPO checkpoint available. Weights stay fixed during flight.':'Some policy files are missing. Disabled controllers need a model supplied with rocket demo --model / --best-model. Random remains available.';
+    const benchmarks=$('benchmarks');benchmarks.replaceChildren();
+    for(const policy of ['trained','best','random'])if(status.benchmarks[policy]){
+      const report=status.benchmarks[policy],row=document.createElement('div');row.className='benchmark-row';
+      const label=document.createElement('span');label.textContent=names[policy];const value=document.createElement('strong');value.textContent=`${report.outcomes.landed}/${report.episodes} landed · ${report.mean_reward.toFixed(1)} reward`;row.append(label,value);benchmarks.append(row);
     }
-    renderBenchmarks(state.status.benchmarks);
-    $('launch').disabled = false; $('first-launch').disabled = false;
-  } catch (error) {
-    $('connection-label').textContent = 'SIMULATOR OFFLINE'; $('connection-dot').style.background = 'var(--orange)';
-    showError(`Cannot reach the local simulator. Start it with uv run rocket demo. ${error.message}`);
-  }
+    if(!benchmarks.children.length)benchmarks.textContent='No local evaluation reports. See the README for evaluation commands.';
+    syncUI();
+  }catch(error){$('connection-label').textContent='SIMULATOR OFFLINE';showError(`Cannot reach the local simulator. ${error.message}`);}
 }
 init();

@@ -143,7 +143,21 @@ is not counted as a safe landing. The conventional score target is 200; use more
 episodes and several training seeds before claiming reliable performance.
 
 `watch` uses the simulator's native 2D graphics. `demo` uses a custom browser
-Canvas renderer of the same physics, with no changes to the learned controller.
+3D presentation of recorded physics, with a retained Canvas 2D fallback. The
+landscape fills the viewport; the recorded collision contour and controller
+remain unchanged. Three.js 0.186.1 is bundled locally, so graphics need no CDN.
+
+The browser includes a shared timeline, chase and surface cameras, sideways
+pushes, and a scientific inspection drawer. Plots, policy action probabilities
+and evidence notes refer to the same recorded frame. Probabilities describe
+actions, not landing confidence. Model weights remain fixed during playback.
+
+After a push, **Without your push** computes a matched reference with only the
+latest push removed. Earlier pushes remain. Each controller makes its own
+decisions in that reference. The recorder preserves immutable original flights
+and comparison pairs for the current page session; reloading clears them.
+Experiment metadata includes loaded model hashes, runtime settings and RNG
+states. Decorative terrain, dust and lighting do not affect simulator physics.
 
 ## Checks
 

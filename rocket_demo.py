@@ -21,6 +21,20 @@ from rocket_experiment import (ExperimentMismatchError, decision_record, digest,
                                experiment_record, trajectory_revision)
 
 
+# Explicit resources only: no user-supplied filesystem paths are served.
+ASSETS = {'/': ('index.html', 'text/html; charset=utf-8'),
+          '/style.css': ('style.css', 'text/css; charset=utf-8'),
+          '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+          '/favicon.svg': ('favicon.svg', 'image/svg+xml')}
+for _name in ('flight-state', 'flight-data', 'renderer-2d', 'renderer-3d',
+              'renderer-host', 'analysis'):
+    ASSETS[f'/modules/{_name}.mjs'] = (f'modules/{_name}.mjs', 'text/javascript; charset=utf-8')
+for _name in ('three.module.js', 'three.core.js', 'package.json', 'manifest.json', 'LICENSE'):
+    ASSETS[f'/vendor/three/{_name}'] = (
+        f'vendor/three/{_name}', 'text/javascript; charset=utf-8' if _name.endswith('.js')
+        else 'application/json' if _name.endswith('.json') else 'text/plain; charset=utf-8')
+
+
 class MissionControl:
     def __init__(self, model, best_model, reports=Path("runs")):
         self.paths = {"trained": Path(model), "best": Path(best_model)}
@@ -176,14 +190,10 @@ class DemoHandler(BaseHTTPRequestHandler):
                 expected_context_id = query.get('expected_context_id', [None])[0]
                 self.send_json(200, self.mission.flight(policy, seed, interventions, expected_context_id))
             else:
-                assets = {"/": ("index.html", "text/html; charset=utf-8"),
-                          "/style.css": ("style.css", "text/css; charset=utf-8"),
-                          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
-                          "/favicon.svg": ("favicon.svg", "image/svg+xml")}
-                if url.path not in assets:
+                if url.path not in ASSETS:
                     self.send_json(404, {"error": "Not found"})
                     return
-                filename, content_type = assets[url.path]
+                filename, content_type = ASSETS[url.path]
                 self.send_body(200, files("rocket_ui").joinpath(filename).read_bytes(),
                                content_type)
         except ExperimentMismatchError as error:
