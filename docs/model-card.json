@@ -1,0 +1,71 @@
+{
+  "outcome_rule": "pad_gear_contacts_v1",
+  "measurement": {
+    "measured_on": "2026-10-20",
+    "platform": "Windows",
+    "python": "3.12.14",
+    "torch_threads": 1,
+    "device": "cpu",
+    "versions": {
+      "gymnasium": "1.4.0",
+      "stable-baselines3": "2.9.0",
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "Box2D": "2.3.10"
+    }
+  },
+  "checkpoints": [
+    {
+      "file": "runs/continued/final_model.zip",
+      "sha256": "a5098c15fee8c87a725c449c376476d7f71f128b6ca03060487de2b2eacc3f69",
+      "num_timesteps": 1000032,
+      "parameters": 9797,
+      "policy": "ActorCriticPolicy(\n  (features_extractor): FlattenExtractor(\n    (flatten): Flatten(start_dim=1, end_dim=-1)\n  )\n  (pi_features_extractor): FlattenExtractor(\n    (flatten): Flatten(start_dim=1, end_dim=-1)\n  )\n  (vf_features_extractor): FlattenExtractor(\n    (flatten): Flatten(start_dim=1, end_dim=-1)\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=8, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=8, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=64, out_features=4, bias=True)\n  (value_net): Linear(in_features=64, out_features=1, bias=True)\n)",
+      "optimizer": "Adam",
+      "hyperparameters": {
+        "n_steps": 1024,
+        "batch_size": 64,
+        "n_epochs": 10,
+        "gamma": 0.999,
+        "gae_lambda": 0.98,
+        "ent_coef": 0.01,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "learning_rate": 0.0003,
+        "normalize_advantage": true,
+        "target_kl": null,
+        "seed": 42
+      },
+      "clip_range": 0.2,
+      "optimizer_kwargs": {
+        "eps": 1e-05
+      }
+    },
+    {
+      "file": "runs/continued/best/best_model.zip",
+      "sha256": "c400b7576bfea49fe199103ac051e31cc4c74183aeff50520aefd8e14d5a1c9a",
+      "num_timesteps": 880000,
+      "parameters": 9797,
+      "policy": "ActorCriticPolicy(\n  (features_extractor): FlattenExtractor(\n    (flatten): Flatten(start_dim=1, end_dim=-1)\n  )\n  (pi_features_extractor): FlattenExtractor(\n    (flatten): Flatten(start_dim=1, end_dim=-1)\n  )\n  (vf_features_extractor): FlattenExtractor(\n    (flatten): Flatten(start_dim=1, end_dim=-1)\n  )\n  (mlp_extractor): MlpExtractor(\n    (policy_net): Sequential(\n      (0): Linear(in_features=8, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n    (value_net): Sequential(\n      (0): Linear(in_features=8, out_features=64, bias=True)\n      (1): Tanh()\n      (2): Linear(in_features=64, out_features=64, bias=True)\n      (3): Tanh()\n    )\n  )\n  (action_net): Linear(in_features=64, out_features=4, bias=True)\n  (value_net): Linear(in_features=64, out_features=1, bias=True)\n)",
+      "optimizer": "Adam",
+      "hyperparameters": {
+        "n_steps": 1024,
+        "batch_size": 64,
+        "n_epochs": 10,
+        "gamma": 0.999,
+        "gae_lambda": 0.98,
+        "ent_coef": 0.01,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "learning_rate": 0.0003,
+        "normalize_advantage": true,
+        "target_kl": null,
+        "seed": 42
+      },
+      "clip_range": 0.2,
+      "optimizer_kwargs": {
+        "eps": 1e-05
+      }
+    }
+  ]
+}

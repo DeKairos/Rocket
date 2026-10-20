@@ -1,5 +1,12 @@
 # First training experiment
 
+This is the historical report under the original sleeping-body outcome rule.
+Its "Landed" counts do not enforce the current pad/contact checks. The
+[current README results](README.md#measured-results) and
+[fresh evaluation reports](docs/evaluation/) use `pad_gear_contacts_v1`:
+14/20 confirmed pad landings for the final checkpoint and 13/20 for the
+validation-selected checkpoint. Mean rewards remain unchanged.
+
 Measured locally on Windows, CPU, Python 3.12, using the dependency versions
 in `uv.lock` (Gymnasium 1.4.0 and Stable Baselines3 2.9.0).
 
