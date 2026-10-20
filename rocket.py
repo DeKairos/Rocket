@@ -13,6 +13,7 @@ from stable_baselines3.common.logger import configure
 from stable_baselines3.common.monitor import Monitor
 
 ENV_ID = "LunarLander-v3"
+OUTCOME_RULE = "pad_gear_contacts_v1"
 
 
 def flight_outcome(env, observation, terminated):
@@ -22,6 +23,14 @@ def flight_outcome(env, observation, terminated):
     if abs(float(observation[0])) >= 1.0:
         return "out_of_bounds"
     if terminated and not env.unwrapped.lander.awake:
+        world = env.unwrapped
+        # Gymnasium ends successfully when the body sleeps anywhere on terrain.
+        # Our mission requires both gear supports on the marked landing pad.
+        if not all(world.helipad_x1 <= leg.position.x <= world.helipad_x2
+                   for leg in world.legs):
+            return "off_pad"
+        if not (bool(observation[6]) and bool(observation[7])):
+            return "unsafe_landing"
         return "landed"
     return "timeout"
 
@@ -93,7 +102,8 @@ def rollout(args):
     env = gym.make(ENV_ID, render_mode="human" if args.command == "watch" else None)
     returns = []
     flights = []
-    outcomes = {"landed": 0, "crashed": 0, "out_of_bounds": 0, "timeout": 0}
+    outcomes = {"landed": 0, "off_pad": 0, "unsafe_landing": 0,
+                "crashed": 0, "out_of_bounds": 0, "timeout": 0}
     try:
         for episode in range(args.episodes):
             observation, _ = env.reset(seed=args.seed + episode)
@@ -117,7 +127,7 @@ def rollout(args):
                     break
     finally:
         env.close()
-    report = {"environment": ENV_ID,
+    report = {"environment": ENV_ID, "outcome_rule": OUTCOME_RULE,
               "policy": "random" if model is None else str(args.model),
               "seed": args.seed, "episodes": args.episodes,
               "mean_reward": float(np.mean(returns)),
@@ -125,7 +135,7 @@ def rollout(args):
               "episode_rewards": returns, "flights": flights,
               "landing_rate": outcomes["landed"] / args.episodes}
     print(f"Mean reward: {report['mean_reward']:.1f} +/- {report['std_reward']:.1f}")
-    print(f"Safe landings: {outcomes['landed']}/{args.episodes}")
+    print(f"Pad landings: {outcomes['landed']}/{args.episodes}")
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")

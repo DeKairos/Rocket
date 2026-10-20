@@ -55,6 +55,7 @@ class MissionControl:
                     benchmarks[policy] = {key: report[key] for key in
                                           ("episodes", "seed", "mean_reward",
                                            "std_reward", "outcomes", "landing_rate")}
+                    benchmarks[policy]['outcome_rule'] = report.get('outcome_rule')
                 except (ValueError, KeyError, TypeError):
                     pass
         return {"environment": ENV_ID, "fps": FPS,

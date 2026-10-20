@@ -1,6 +1,6 @@
 // Retained Canvas renderer of the recorded Box2D fixtures.
 export function create2DRenderer(canvas) {
-const outcomes={landed:'Landing confirmed.',crashed:'Hull impact.',timeout:'Time limit reached.',out_of_bounds:'Craft left the flight area.'};
+const outcomes={landed:'Pad landing confirmed.',off_pad:'Landing pad missed.',unsafe_landing:'Touchdown not confirmed.',crashed:'Hull impact.',timeout:'Time limit reached.',out_of_bounds:'Craft left the flight area.'};
 const ctx=canvas.getContext('2d');
 let width=0,height=0;
 const state={flights:[],step:0};

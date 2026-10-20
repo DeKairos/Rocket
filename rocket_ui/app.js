@@ -6,7 +6,7 @@ import {AnalysisView} from './modules/analysis.mjs';
 const $=id=>document.getElementById(id);
 const names={trained:'Trained pilot',best:'Best checkpoint',random:'Random controller'};
 const actions=['Coast / engines idle','Left side engine','Main engine','Right side engine'];
-const outcomes={landed:'Landing confirmed.',crashed:'Hull impact.',timeout:'Time limit reached.',out_of_bounds:'Craft left the flight area.'};
+const outcomes={landed:'Pad landing confirmed.',off_pad:'Landing pad missed.',unsafe_landing:'Touchdown not confirmed.',crashed:'Hull impact.',timeout:'Time limit reached.',out_of_bounds:'Craft left the flight area.'};
 const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
 const narrow=matchMedia('(max-width: 760px)');
 const options={camera:reducedMotion.matches?'surface':'chase',split:false};
@@ -203,7 +203,9 @@ async function init(){
     const benchmarks=$('benchmarks');benchmarks.replaceChildren();
     for(const policy of ['trained','best','random'])if(status.benchmarks[policy]){
       const report=status.benchmarks[policy],row=document.createElement('div');row.className='benchmark-row';
-      const label=document.createElement('span');label.textContent=names[policy];const value=document.createElement('strong');value.textContent=`${report.outcomes.landed}/${report.episodes} landed · ${report.mean_reward.toFixed(1)} reward`;row.append(label,value);benchmarks.append(row);
+      const label=document.createElement('span');label.textContent=names[policy];const value=document.createElement('strong');
+      const landingLabel=report.outcome_rule==='pad_gear_contacts_v1'?'pad landings':'simulator rests (legacy rule)';
+      value.textContent=`${report.outcomes.landed}/${report.episodes} ${landingLabel} · ${report.mean_reward.toFixed(1)} reward`;row.append(label,value);benchmarks.append(row);
     }
     if(!benchmarks.children.length)benchmarks.textContent='No local evaluation reports. See the README for evaluation commands.';
     syncUI();

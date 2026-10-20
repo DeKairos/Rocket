@@ -8,6 +8,7 @@ import platform
 import numpy as np
 import torch
 from gymnasium.envs.box2d.lunar_lander import FPS, SCALE
+from rocket import OUTCOME_RULE
 
 
 class ExperimentMismatchError(ValueError):
@@ -37,6 +38,7 @@ def experiment_record(env, seed, policy, model_record):
         'initial_rng': {'environment_rng': copy.deepcopy(env.np_random.bit_generator.state),
                         'action_space_rng': copy.deepcopy(env.action_space.np_random.bit_generator.state)},
         'units': 'simulator units', 'dynamics': '2D', 'weights_fixed': True,
+        'outcome_rule': OUTCOME_RULE,
     }
 
 

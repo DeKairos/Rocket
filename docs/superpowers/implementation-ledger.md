@@ -21,3 +21,12 @@
 - Browser exercised actual trained seed100 launch, right push at step45, matched reference with latest push omitted, linked measurements, trained/random split, phone inspection preview and manual 2D fallback at completed outcomes.
 - Observed display timing before shadows: 119Hz, p95 8.5ms at 1440x900 on this machine. This is a local observation, not a device-independent benchmark or simulator generation time. Shadowed final world requires fresh timing; no general performance guarantee.
 - Ruling remains: writable current checkout used after managed-worktree write denial. Branch preserved for user review; no merge/push performed.
+
+## Outcome correction — 2026-10-20
+
+- User screenshot showed a resting craft outside the pad labelled confirmed. Root cause: flight_outcome treated Gymnasium's sleeping-body terminal state as successful pad landing, without pad/contact checks.
+- Added shared pad_gear_contacts_v1 rule: preserve crash/bounds/timeout precedence; sleeping craft with either gear support center outside pad is off_pad; missing either leg contact is unsafe_landing; only both contacts and both support centers on pad confirm landed.
+- CLI and demo share the classifier. Metadata/context and new evaluation reports record the rule; historical benchmark counts are explicitly labelled simulator rests under the legacy rule.
+- Regression proof: three new classifier cases failed before the fix; all five classification tests passed after. Node behavior suite passed 12/12, including both new terminal labels. Real trained seed116 now reports unsafe_landing with contacts [false,true], despite reward296.2; seed100 remains a confirmed pad landing.
+- Full Python run: 20 tests, two errors in the same HTTP parity test's random/trained subcases (Windows10054 during response read). Remaining methods passed. This remains a known baseline transport limitation; no fully green suite claim.
+- Restarted local demo at port8002 and verified the updated terminal label in the real browser.

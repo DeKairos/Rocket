@@ -73,6 +73,8 @@ test('2D fallback renders completed comparisons and their outcome labels',async(
     const renderer=create2DRenderer(canvas);
     const f={...fixture,policy:'trained',seed:100,world:{width:20,height:13.333,pad:[8,12,3],terrain:[[0,3],[20,3]]},frames:fixture.frames.map(frame=>({...frame,bodies:[[[0,0],[1,0],[0,1]],[[0,0],[.1,0],[0,.5]],[[1,0],[1.1,0],[1,.5]]]}))};
     renderer.resize();renderer.setFlights([f,{...f,outcome:'crashed'}]);renderer.render(100);
-    assert.ok(labels.includes('Landing confirmed.'));assert.ok(labels.includes('Hull impact.'));
+    assert.ok(labels.includes('Pad landing confirmed.'));assert.ok(labels.includes('Hull impact.'));
+    renderer.setFlights([{...f,outcome:'off_pad'},{...f,outcome:'unsafe_landing'}]);renderer.render(100);
+    assert.ok(labels.includes('Landing pad missed.'));assert.ok(labels.includes('Touchdown not confirmed.'));
   }finally{globalThis.window=previous;}
 });

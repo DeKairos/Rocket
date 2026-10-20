@@ -139,7 +139,12 @@ low speed, upright attitude and ground contact, penalizes engine use and crashes
 and rewards safe landings. Fuel is unlimited, with a reward cost for using engines.
 
 Evaluation reports both reward and actual landing outcomes: a high score alone
-is not counted as a safe landing. The conventional score target is 200; use more
+is not counted as a pad landing. A confirmed pad landing requires a sleeping,
+non-crashed craft with both legs contacting the ground and both gear support
+centers inside the marked pad. A resting craft outside it is `off_pad`; missing
+gear contact is `unsafe_landing`. Reports identify this rule as
+`pad_gear_contacts_v1`; older reports used the simulator's broader sleep criterion.
+The conventional score target is 200; use more
 episodes and several training seeds before claiming reliable performance.
 
 `watch` uses the simulator's native 2D graphics. `demo` uses a custom browser
