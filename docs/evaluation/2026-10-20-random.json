@@ -1,0 +1,176 @@
+{
+  "environment": "LunarLander-v3",
+  "outcome_rule": "pad_gear_contacts_v1",
+  "policy": "random",
+  "seed": 100,
+  "episodes": 20,
+  "mean_reward": -191.84419130376585,
+  "std_reward": 112.31018504925271,
+  "outcomes": {
+    "landed": 0,
+    "off_pad": 0,
+    "unsafe_landing": 0,
+    "crashed": 18,
+    "out_of_bounds": 2,
+    "timeout": 0
+  },
+  "episode_rewards": [
+    -310.47747383629724,
+    -92.93367841003464,
+    -146.98060875096166,
+    -241.76052169309818,
+    -108.45693119059594,
+    -291.8880866698277,
+    -121.76552775963876,
+    -65.01920660263022,
+    -81.39675710772025,
+    -122.39365121640557,
+    -153.88224413580804,
+    -278.243272182192,
+    -473.81786787744693,
+    -103.34965648397946,
+    -68.31834540116014,
+    -120.5893612476925,
+    -400.44816190210656,
+    -283.91330327154833,
+    -197.42000400059146,
+    -173.82916633558094
+  ],
+  "flights": [
+    {
+      "seed": 100,
+      "reward": -310.47747383629724,
+      "steps": 98,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 101,
+      "reward": -92.93367841003464,
+      "steps": 61,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 102,
+      "reward": -146.98060875096166,
+      "steps": 93,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 103,
+      "reward": -241.76052169309818,
+      "steps": 123,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 104,
+      "reward": -108.45693119059594,
+      "steps": 112,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 105,
+      "reward": -291.8880866698277,
+      "steps": 80,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 106,
+      "reward": -121.76552775963876,
+      "steps": 70,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 107,
+      "reward": -65.01920660263022,
+      "steps": 68,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 108,
+      "reward": -81.39675710772025,
+      "steps": 63,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 109,
+      "reward": -122.39365121640557,
+      "steps": 75,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 110,
+      "reward": -153.88224413580804,
+      "steps": 99,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 111,
+      "reward": -278.243272182192,
+      "steps": 91,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 112,
+      "reward": -473.81786787744693,
+      "steps": 91,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 113,
+      "reward": -103.34965648397946,
+      "steps": 63,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 114,
+      "reward": -68.31834540116014,
+      "steps": 73,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 115,
+      "reward": -120.5893612476925,
+      "steps": 69,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 116,
+      "reward": -400.44816190210656,
+      "steps": 87,
+      "outcome": "out_of_bounds"
+    },
+    {
+      "seed": 117,
+      "reward": -283.91330327154833,
+      "steps": 97,
+      "outcome": "out_of_bounds"
+    },
+    {
+      "seed": 118,
+      "reward": -197.42000400059146,
+      "steps": 104,
+      "outcome": "crashed"
+    },
+    {
+      "seed": 119,
+      "reward": -173.82916633558094,
+      "steps": 111,
+      "outcome": "crashed"
+    }
+  ],
+  "landing_rate": 0.0,
+  "measurement": {
+    "measured_on": "2026-10-20",
+    "platform": "Windows",
+    "python": "3.12.14",
+    "torch_threads": 1,
+    "device": "cpu",
+    "versions": {
+      "gymnasium": "1.4.0",
+      "stable-baselines3": "2.9.0",
+      "torch": "2.14.1",
+      "numpy": "2.5.4",
+      "Box2D": "2.3.10"
+    }
+  }
+}

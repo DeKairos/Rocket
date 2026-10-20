@@ -3,3 +3,7 @@
 __pycache__/
 runs/
 *.egg-info/
+build/
+dist/
+.playwright-mcp/
+.test-tmp/
