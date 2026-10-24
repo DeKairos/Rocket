@@ -55,6 +55,9 @@ function syncUI(){
   const retained=(f?.interventions||[]).filter(p=>p.step<Math.floor(s.step)).length;
   const canPush=has&&!s.busy&&s.flights.length===1&&s.step<f.steps&&retained<12;
   enable('disturb',canPush);enable('push-left',canPush);enable('push-right',canPush);
+  if(!has||complete||s.flights.length!==1){
+    $('push-panel').hidden=true;$('disturb').setAttribute('aria-expanded','false');
+  }
   const canCompare=has&&!s.busy&&f.interventions.length>0&&s.comparison!=='counterfactual';
   enable('counterfactual',canCompare);enable('result-compare',canCompare);
   $('result-compare').hidden=!f?.interventions.length;
